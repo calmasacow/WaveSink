@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMixerStore } from "../../store/mixer";
 import type { BusDef } from "../../types";
-import { busMembers, MASTER_BUS, MAX_VOLUME } from "../../types";
+import { busMembers, MAX_VOLUME } from "../../types";
 import { perceptual } from "../../lib/audio";
 import { Ms } from "../Icons";
 import { ConfirmModal } from "../ConfirmModal";
@@ -39,9 +39,6 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
   const [managing, setManaging] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // The master mix always exists and carries every channel.
-  const isMaster = bus.name === MASTER_BUS;
-
   // Volume/mute live on the persisted bus, so they survive remounts, profile
   // switches, and restarts (the backend re-applies them to the fresh node).
   const volume = bus.volume_percent;
@@ -64,17 +61,7 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
 
   return (
     <div className={"strip bus-strip" + (muted ? " muted" : "")}>
-      {!isMaster && (
-        <button
-          type="button"
-          className="strip-x"
-          aria-label={`Delete mix ${bus.label}`}
-          title="Delete mix"
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Ms name="close" />
-        </button>
-      )}
+      <button type="button" className="strip-x" aria-label={`Delete mix ${bus.label}`} title="Delete mix" onClick={() => setConfirmingDelete(true)}><Ms name="close" /></button>
       <button
         type="button"
         className="strip-pop"
@@ -94,7 +81,7 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
           <button
             type="button"
             className="strip-meta strip-meta-btn"
-            title={`${isMaster ? "Mic and levels" : "Channels and levels"}${bus.mic ? " (carries the mic)" : ""}`}
+            title={`Channels and levels${bus.mic ? " (carries the mic)" : ""}`}
             onClick={() => setManaging(true)}
           >
             {memberLabel(carried.length, allNames.length)}
@@ -115,29 +102,9 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
             >
               <span className="menu-item-label">Microphone</span>
             </MenuCheckItem>
-            {/* The master mix always carries every channel - no membership
-                editing there, but its mic and send levels are fair game. */}
-            {!isMaster && (
-              <>
-                {channels.map((c) => (
-                  <MenuCheckItem
-                    key={c.name}
-                    checked={carried.includes(c.name)}
-                    onClick={() => toggleMember(c.name)}
-                  >
-                    <span className="menu-item-label">{c.label}</span>
-                  </MenuCheckItem>
-                ))}
-                <div className="menu-div" />
-                <MenuCheckItem
-                  checked={bus.exclude}
-                  title="New channels join automatically"
-                  onClick={() => void setBusExclude(bus.name, !bus.exclude)}
-                >
-                  <span className="menu-item-label">Auto-include new channels</span>
-                </MenuCheckItem>
-              </>
-            )}
+            {channels.map((c) => <MenuCheckItem key={c.name} checked={carried.includes(c.name)} onClick={() => toggleMember(c.name)}><span className="menu-item-label">{c.label}</span></MenuCheckItem>)}
+            <div className="menu-div" />
+            <MenuCheckItem checked={bus.exclude} title="New channels join automatically" onClick={() => void setBusExclude(bus.name, !bus.exclude)}><span className="menu-item-label">Auto-include new channels</span></MenuCheckItem>
             <div className="menu-div" />
             <MenuItem
               icon="open_in_new"

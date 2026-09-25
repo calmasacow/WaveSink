@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useMixerStore } from "../../store/mixer";
-import { MASTER_BUS } from "../../types";
 import { Ms, ICON_CHOICES } from "../Icons";
+import { CHANNEL_COLORS } from "../ChannelIcon";
 import { Modal } from "../Modal";
 import { ChannelStrip } from "./ChannelStrip";
 import { MicStrip } from "./MicStrip";
@@ -10,7 +10,7 @@ import { BusStrip } from "./StreamMixStrip";
 
 // UI-side gates only; the backend enforces the real limits.
 const MAX_CHANNELS = 10;
-const MAX_BUSES = 4;
+const MAX_BUSES = 8;
 
 /** Signal-flow group: header row (icon, label, count, optional +) above
  * its strips - per the updated design. */
@@ -67,6 +67,7 @@ export function MixerBoard() {
   const [addingChannel, setAddingChannel] = useState(false);
   const [channelLabel, setChannelLabel] = useState("");
   const [channelIcon, setChannelIcon] = useState(ICON_CHOICES[0]);
+  const [channelColor, setChannelColor] = useState("blue");
   const [addingMix, setAddingMix] = useState(false);
   const [mixLabel, setMixLabel] = useState("");
   const [draggingChannel, setDraggingChannel] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function MixerBoard() {
   const createChannel = () => {
     const label = channelLabel.trim();
     if (!label) return;
-    void addChannel(label, channelIcon);
+    void addChannel(label, channelIcon, channelColor);
     closeChannelModal();
   };
   const createMix = () => {
@@ -177,7 +178,7 @@ export function MixerBoard() {
               count={`${buses.length}`}
               hint="Recordable copies of your channels - add as an audio input in OBS"
               onAdd={
-                buses.filter((b) => b.name !== MASTER_BUS).length < MAX_BUSES
+                buses.length < MAX_BUSES
                   ? () => setAddingMix(true)
                   : undefined
               }
@@ -216,6 +217,10 @@ export function MixerBoard() {
               <Ms name={choice} />
             </button>
           ))}
+        </div>
+        <div className="modal-label">Icon background</div>
+        <div className="icon-color-grid">
+          {CHANNEL_COLORS.map((color) => <button type="button" key={color} className={"icon-color-choice icon-color-" + color + (color === channelColor ? " sel" : "")} onClick={() => setChannelColor(color)} aria-label={color} />)}
         </div>
         <div className="modal-btns">
           <button

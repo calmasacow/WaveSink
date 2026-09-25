@@ -1,22 +1,25 @@
 # Sink
 
-SteelSeries Sonar for Linux. Built on PipeWire.
+Linux-native input/mix routing for PipeWire, inspired by the workflow of
+modern creator mixers.
 
-Route each app to its own channel - Game, Chat, Music - and control
-volume, mute, and output device per channel. Build mixes for OBS and a
-processed virtual microphone for voice chat.
+Group unlimited apps into software inputs such as Game, Chat, and Music;
+then build independent Personal, Stream, Chat, and custom mixes for
+monitoring and capture. The processed microphone is another matrix input.
 
 ![Mixer](docs/mixer.png)
 
 ```
- apps ─► channels ─► your ears
-              └────► a Mix ─► OBS / recorder
+ inputs ──► independent route cells ──► Personal / Stream / Chat mixes
+                                               ├──► headphones / speakers
+                                               └──► Sink: <mix> for OBS/Discord
 ```
 
 ## Features
 
-- **Channels** - per-app routing with volume, mute, meters, and a choice
-  of output device per channel
+- **Inputs and mixes** - software channels group unlimited apps under one
+  source fader; mixes are independent destinations with per-cell send,
+  mute, and master controls
 - **Apps** - running apps appear automatically; assign once, remembered
   forever
 - **Mixes** - recordable sources for OBS. Master Mix carries everything;
@@ -28,7 +31,10 @@ processed virtual microphone for voice chat.
   from its strip). In OBS, add a mix as an audio input - not Desktop Audio. A mix can also
   sit with the output devices instead, if you would rather keep your
   recording list short; it stays capturable through its monitor.
-- **Equalizer** - per-channel parametric EQ (up to 10 bands) with a
+- **Independent destinations** - Personal, Stream, Chat, and custom mixes
+  keep separate balances. Monitor selection changes what you hear without
+  rewriting app assignments; every mix is capturable as `Sink: <name>`.
+- **Equalizer** - per-input parametric EQ (up to 10 bands) with a
   draggable response curve, bundled community presets, and import/export
   including AutoEq text blocks
 - **Microphone** - noise gate, compressor and limiter into a virtual mic
@@ -108,6 +114,13 @@ npm run tauri build    # package
 ```
 
 Config lives in `~/.config/sink` as plain JSON.
+
+The routing contract is documented in [docs/routing-model.md](docs/routing-model.md).
+On first launch after upgrading, old JSON files are backed up beside the new
+`routing.json`; see the migration notes there for the Sonar/old-sink mapping.
+
+For the current implementation status and an OpenCode-ready continuation plan,
+see [OPENCODE_HANDOFF.md](OPENCODE_HANDOFF.md).
 
 ## Contact
 

@@ -1,5 +1,6 @@
 use crate::audio::types::{AppStream, EqConfig, MicConfig, OutputDevice};
 use crate::error::SinkError;
+use crate::routing_model::OutputBinding;
 
 /// Abstraction over the audio system (native PipeWire, pactl fallback);
 /// commands must only ever talk to this trait, never a concrete backend.
@@ -69,6 +70,14 @@ pub trait AudioBackend: Send + Sync {
         member: &str,
         percent: u8,
     ) -> Result<(), SinkError>;
+
+    /// Register a matrix hardware source. Volume/mute apply only to Sink's
+    /// mix sends, never to the physical device's global PipeWire controls.
+    fn set_hardware_input(&self, id: &str, source_name: &str, volume_percent: u8, muted: bool) -> Result<(), SinkError>;
+
+    /// Replace physical playback targets for a mix. Bindings are independent
+    /// from session-only monitoring and may contain more than one device.
+    fn set_mix_outputs(&self, name: &str, outputs: &[OutputBinding]) -> Result<(), SinkError>;
 
     /// Monitor a channel/mix/mic on the system default output (session
     /// scoped, an extra passive link set). Native-only.

@@ -30,6 +30,7 @@ export interface VirtualSink {
   label: string;
   /** Material Symbol for the strip icon. */
   icon: string | null;
+  icon_color?: string | null;
   volume_percent: number;
   muted: boolean;
   /** Whether this channel feeds the Stream Mix source (OBS recording). */
@@ -134,6 +135,7 @@ export type MixRole = "recording" | "playback";
 export interface BusDef {
   name: string;
   label: string;
+  icon?: string | null;
   /** Manual mode: carried channels. Auto-include mode: excluded channels. */
   channels: string[];
   /** True = carries everything except `channels`; new channels join automatically. */
@@ -149,6 +151,47 @@ export interface BusDef {
   /** Per-member send level within this mix (0-150%); a member absent here
    *  carries at 100%. Keyed by channel sink name, or "sink_mic". */
   member_gains: Record<string, number>;
+}
+
+export type InputKind = "software" | "hardware";
+export interface FxChain {
+  high_pass_hz: number | null;
+  eq_enabled: boolean;
+  gate_enabled: boolean;
+  compressor_enabled: boolean;
+  limiter_enabled: boolean;
+}
+export interface RoutingInput {
+  id: string;
+  label: string;
+  icon: string | null;
+  icon_color: string | null;
+  kind: InputKind;
+  source_name: string;
+  volume_percent: number;
+  muted: boolean;
+  fx: FxChain;
+  order: number;
+}
+export interface OutputBinding { device: string; enabled: boolean }
+export interface RoutingMix {
+  id: string;
+  label: string;
+  icon: string | null;
+  volume_percent: number;
+  muted: boolean;
+  output_bindings: OutputBinding[];
+  order: number;
+  role: MixRole;
+}
+export interface RouteCell { enabled: boolean; send_percent: number; muted: boolean }
+export interface RoutingModel {
+  version: number;
+  inputs: RoutingInput[];
+  mixes: RoutingMix[];
+  routes: Record<string, Record<string, RouteCell>>;
+  monitor_mix: string | null;
+  hidden_devices: string[];
 }
 
 /** The channels a mix actually carries, given the full channel set. */
@@ -183,5 +226,3 @@ export interface HotkeyStatus {
   balance_step: number;
   steps: number[];
 }
-
-export const MASTER_BUS = "sink_stream";

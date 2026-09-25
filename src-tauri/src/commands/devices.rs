@@ -286,6 +286,7 @@ pub fn init_virtual_devices(
 ) -> Result<(), String> {
     let (defs, prefs) = {
         let mixer = state.lock_mixer()?;
+        let _ = mixer.buses.save();
         (mixer.channel_defs.clone(), mixer.prefs.clone())
     };
 
@@ -306,17 +307,60 @@ pub fn init_virtual_devices(
             .map_err(|e| e.to_string())?;
     }
 
-    let (outputs, eq, mic, buses) = {
+    let (outputs, eq, mic, buses, mix_outputs, hardware_inputs) = {
         let mut mixer = state.lock_mixer()?;
         mixer.init_defaults();
-        // The master mix always carries the full channel set.
-        let names: Vec<String> = defs.channels.iter().map(|c| c.name.clone()).collect();
-        mixer.buses.sync_master(&names);
+        // Refresh the matrix's compatibility projection after the starter
+        // Personal/Chat mixes have been materialized.
+        let legacy = crate::routing_model::RoutingModel::from_legacy(
+            &mixer.channel_defs,
+            &mixer.buses,
+            &mixer.outputs,
+        );
+        let extras = mixer
+            .routing
+            .inputs
+            .iter()
+            .filter(|input| {
+                !legacy
+                    .inputs
+                    .iter()
+                    .any(|legacy_input| legacy_input.id == input.id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        mixer.routing.inputs = legacy.inputs;
+        mixer.routing.inputs.extend(extras);
+        mixer.routing.mixes = legacy
+            .mixes
+            .into_iter()
+            .map(|mut mix| {
+                if let Some(saved) = mixer.routing.mixes.iter().find(|saved| saved.id == mix.id) {
+                    mix.icon = saved.icon.clone();
+                    mix.output_bindings = saved.output_bindings.clone();
+                }
+                mix
+            })
+            .collect();
+        for (input, cells) in legacy.routes {
+            let target = mixer.routing.routes.entry(input).or_default();
+            for (mix, cell) in cells {
+                target.entry(mix).or_insert(cell);
+            }
+        }
+        let _ = mixer.routing.save();
         (
             mixer.outputs.clone(),
             mixer.eq.clone(),
             mixer.mic.clone(),
             mixer.buses.clone(),
+            mixer
+                .routing
+                .mixes
+                .iter()
+                .map(|mix| (mix.id.clone(), mix.output_bindings.clone()))
+                .collect::<Vec<_>>(),
+            mixer.routing.inputs.iter().filter(|input| input.kind == crate::routing_model::InputKind::Hardware).cloned().collect::<Vec<_>>(),
         )
     };
     if let Err(e) = buses.save() {
@@ -371,6 +415,16 @@ pub fn init_virtual_devices(
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
         crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
     }
+    for (mix, bindings) in mix_outputs {
+        if let Err(e) = state.backend.set_mix_outputs(&mix, &bindings) {
+            eprintln!("sink: output routing for mix {mix} failed: {e}");
+        }
+    }
+    for input in &hardware_inputs {
+        if let Err(e) = state.backend.set_hardware_input(&input.id, &input.source_name, input.volume_percent, input.muted) {
+            eprintln!("sink: hardware input {} failed: {e}", input.id);
+        }
+    }
 
     // Bring the mic chain up if it was enabled last session.
     if mic.enabled {
@@ -398,6 +452,7 @@ pub fn init_virtual_devices(
             eq: mixer.eq.clone(),
             trigger_device: None,
             buses: mixer.buses.clone(),
+            routing: mixer.routing.clone(),
         };
         match crate::persistence::profiles::save(&default) {
             Ok(()) => {

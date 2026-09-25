@@ -4,6 +4,7 @@ pub mod channels;
 pub mod devices;
 pub mod eq;
 pub mod hotkeys;
+pub mod matrix;
 pub mod mic;
 pub mod profiles;
 pub mod routing;

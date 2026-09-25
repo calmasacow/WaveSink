@@ -10,12 +10,13 @@ pub fn add_channel(
     state: State<'_, AppState>,
     label: String,
     icon: Option<String>,
+    icon_color: Option<String>,
 ) -> Result<(), String> {
     let (def, defs) = {
         let mut mixer = state.lock_mixer()?;
         let def = mixer
             .channel_defs
-            .add(&label, icon)
+            .add(&label, icon, icon_color)
             .map_err(|e| e.to_string())?;
         (def, mixer.channel_defs.clone())
     };
@@ -44,13 +45,12 @@ pub fn add_channel(
             name: def.name,
             label: def.label,
             icon: def.icon,
+            icon_color: def.icon_color,
             volume_percent: 100,
             muted: false,
             stream_mix: def.stream_mix,
         });
-        // The new channel joins the master mix automatically.
         let names = crate::commands::buses::channel_names(&mixer);
-        mixer.buses.sync_master(&names);
         crate::commands::profiles::autosave_active(&mixer);
         (mixer.buses.clone(), names)
     };

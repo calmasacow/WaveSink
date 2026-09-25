@@ -9,6 +9,9 @@ use crate::persistence::channels::Channels;
 /// set through the UI, plus the persistent app→channel assignments.
 #[derive(Debug, Default)]
 pub struct MixerState {
+    /// Wave Link-style input×mix state. Legacy channel/bus fields are kept as
+    /// compatibility projections while the PipeWire graph is migrated.
+    pub routing: crate::routing_model::RoutingModel,
     pub channels: Vec<VirtualSink>,
     /// User-defined channel set (persisted to disk).
     pub channel_defs: Channels,
@@ -56,6 +59,7 @@ impl MixerState {
                 name: def.name.clone(),
                 label: def.label.clone(),
                 icon: def.icon.clone(),
+                icon_color: def.icon_color.clone(),
                 volume_percent: def.volume_percent,
                 muted: def.muted,
                 stream_mix: def.stream_mix,

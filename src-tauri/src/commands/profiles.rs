@@ -19,6 +19,7 @@ pub fn autosave_active(mixer: &crate::mixer::state::MixerState) {
         // Preserved from the cache rather than re-read from disk each mutation.
         trigger_device: mixer.active_trigger.clone(),
         buses: mixer.buses.clone(),
+        routing: mixer.routing.clone(),
     };
     if let Err(e) = profiles::save(&profile) {
         eprintln!("sink: autosave of profile {name} failed: {e}");
@@ -164,10 +165,8 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
     // ---- mix bus reconciliation ----
     let _rebuild = state.lock_bus_rebuild();
     let mut target_buses = profile.buses.clone();
-    // The master mix always exists and carries the profile's full channel
-    // set (this also upgrades old profiles saved before the master model).
     let names: Vec<String> = profile.channels.iter().map(|c| c.name.clone()).collect();
-    target_buses.sync_master(&names);
+    target_buses.buses.retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
     let current_buses = {
         let mixer = state.lock_mixer()?;
         mixer.buses.clone()
@@ -212,6 +211,11 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         }
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
         crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
+        if let Some(mix) = profile.routing.mixes.iter().find(|mix| mix.id == bus.name) {
+            if let Err(e) = state.backend.set_mix_outputs(&bus.name, &mix.output_bindings) {
+                eprintln!("sink: profile output routing for {} failed: {e}", bus.name);
+            }
+        }
     }
 
     let (defs, assignments, outputs, eq) = {
@@ -225,6 +229,7 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                     name: c.name.clone(),
                     label: c.label.clone(),
                     icon: c.icon.clone(),
+                    icon_color: c.icon_color.clone(),
                     stream_mix: c.stream_mix,
                     // Carry levels into the persisted defs so channels.json
                     // stays the single source of truth.
@@ -237,6 +242,15 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         mixer.assignments = profile.assignments.clone();
         mixer.outputs = profile.outputs.clone();
         mixer.eq = profile.eq.clone();
+        mixer.routing = if profile.routing.mixes.is_empty() {
+            crate::routing_model::RoutingModel::from_legacy(
+                &mixer.channel_defs,
+                &mixer.buses,
+                &profile.outputs,
+            )
+        } else {
+            profile.routing.clone()
+        };
         mixer.auto_routed.clear();
         (
             mixer.channel_defs.clone(),
@@ -271,6 +285,7 @@ pub fn create_blank_profile(app: tauri::AppHandle, name: String) -> Result<(), S
             name: def.name,
             label: def.label,
             icon: def.icon,
+            icon_color: def.icon_color,
             volume_percent: 100,
             muted: false,
             stream_mix: def.stream_mix,
@@ -284,6 +299,7 @@ pub fn create_blank_profile(app: tauri::AppHandle, name: String) -> Result<(), S
         eq: Default::default(),
         trigger_device: None,
         buses: Default::default(),
+        routing: Default::default(),
     };
     profiles::save(&profile).map_err(|e| e.to_string())?;
     crate::refresh_tray(&app);

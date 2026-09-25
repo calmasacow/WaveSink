@@ -27,6 +27,10 @@ pub struct Profile {
     /// User-defined mixes (record buses) with their member channels.
     #[serde(default)]
     pub buses: crate::persistence::buses::Buses,
+    /// Full input×mix matrix; absent in profiles written before the routing
+    /// model was introduced.
+    #[serde(default)]
+    pub routing: crate::routing_model::RoutingModel,
 }
 
 /// Listing entry: name plus trigger metadata for the UI/auto-switcher.

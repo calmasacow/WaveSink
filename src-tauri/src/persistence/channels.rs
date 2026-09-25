@@ -20,6 +20,9 @@ pub struct ChannelDef {
     /// Material Symbol name for the strip icon (None = legacy default).
     #[serde(default)]
     pub icon: Option<String>,
+    /// Stable palette token used behind the bundled SVG icon.
+    #[serde(default)]
+    pub icon_color: Option<String>,
     /// Whether the channel feeds the Stream Mix source (default: yes).
     #[serde(default = "default_true")]
     pub stream_mix: bool,
@@ -53,6 +56,7 @@ impl Default for Channels {
             name: name.to_string(),
             label: label.to_string(),
             icon: Some(icon.to_string()),
+            icon_color: Some("blue".to_string()),
             stream_mix: true,
             volume_percent: default_volume(),
             muted: false,
@@ -182,7 +186,7 @@ impl Channels {
 
     /// Add a channel for `label`, generating a unique reserved-safe sink
     /// name. Returns the new definition.
-    pub fn add(&mut self, label: &str, icon: Option<String>) -> Result<ChannelDef, SinkError> {
+    pub fn add(&mut self, label: &str, icon: Option<String>, icon_color: Option<String>) -> Result<ChannelDef, SinkError> {
         let label = label.trim();
         if label.is_empty() || label.len() > 24 {
             return Err(SinkError::Config(
@@ -210,6 +214,7 @@ impl Channels {
             name,
             label: label.to_string(),
             icon,
+            icon_color,
             stream_mix: true,
             volume_percent: default_volume(),
             muted: false,
@@ -278,13 +283,13 @@ mod tests {
     #[test]
     fn add_generates_unique_safe_names() {
         let mut c = Channels::default();
-        let d = c.add("Voice Chat!", Some("mic".into())).expect("adds");
+        let d = c.add("Voice Chat!", Some("mic".into()), None).expect("adds");
         assert_eq!(d.name, "sink_voice_chat");
         assert_eq!(d.icon.as_deref(), Some("mic"));
-        let d2 = c.add("Voice Chat", None).expect("adds duplicate label");
+        let d2 = c.add("Voice Chat", None, None).expect("adds duplicate label");
         assert_eq!(d2.name, "sink_voice_chat_2");
         // Reserved collision: label "mic" must not produce sink_mic.
-        let d3 = c.add("Mic", None).expect("adds");
+        let d3 = c.add("Mic", None, None).expect("adds");
         assert_eq!(d3.name, "sink_mic_2");
     }
 
@@ -292,18 +297,18 @@ mod tests {
     fn pathological_labels_hit_the_slug_fallback() {
         let mut c = Channels::default();
         // All-special-char labels slugify to empty → "channel" fallback.
-        let d = c.add("!!!", None).expect("adds");
+        let d = c.add("!!!", None, None).expect("adds");
         assert_eq!(d.name, "sink_channel");
-        let d2 = c.add("___", None).expect("adds second pathological label");
+        let d2 = c.add("___", None, None).expect("adds second pathological label");
         assert_eq!(d2.name, "sink_channel_2");
         // Whitespace-only labels are rejected outright.
-        assert!(c.add("   ", None).is_err());
+        assert!(c.add("   ", None, None).is_err());
     }
 
     #[test]
     fn bus_namespace_labels_stay_out_of_the_bus_prefix() {
         let mut c = Channels::default();
-        let d = c.add("Bus Foo", None).expect("adds");
+        let d = c.add("Bus Foo", None, None).expect("adds");
         assert_eq!(d.name, "sink_ch_bus_foo");
         assert!(!crate::persistence::buses::is_bus_name(&d.name));
         assert!(crate::audio::types::is_virtual_sink(&d.name));

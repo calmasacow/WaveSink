@@ -123,6 +123,18 @@ pub enum Cmd {
         percent: u8,
         reply: Reply<()>,
     },
+    SetHardwareInput {
+        id: String,
+        source_name: String,
+        volume_percent: u8,
+        muted: bool,
+        reply: Reply<()>,
+    },
+    SetMixOutputs {
+        name: String,
+        outputs: Vec<crate::routing_model::OutputBinding>,
+        reply: Reply<()>,
+    },
     /// Listen to a channel/mix/mic on the default output (session scoped).
     SetMonitor {
         name: String,
@@ -244,6 +256,11 @@ struct State {
     bus_links: HashMap<(String, String), LinkSet>,
     /// (bus, member) -> send level (0-150%). Absent = 100%, direct link.
     bus_member_gains: HashMap<(String, String), u8>,
+    /// Unscaled hardware route faders. `bus_member_gains` holds live values
+    /// after source fader/mute scaling, so this survives source adjustments.
+    hardware_route_gains: HashMap<(String, String), u8>,
+    /// Matrix hardware input id -> (PipeWire source node.name, local level, muted).
+    hardware_inputs: HashMap<String, (String, u8, bool)>,
     /// (bus, member) -> live gain insert, only while that pair is off unity.
     send_gains: HashMap<(String, String), SendGainHandle>,
     /// (bus, member) -> links from the member's source into its insert.
@@ -251,6 +268,10 @@ struct State {
     /// Pairs whose insert failed to build - not retried until the user
     /// touches that gain, so a persistent failure can't log every event.
     send_gain_failed: std::collections::HashSet<(String, String)>,
+    /// Mix name -> persisted enabled physical output node names.
+    mix_outputs: HashMap<String, Vec<String>>,
+    /// (mix, output node name) -> live links.
+    mix_output_links: HashMap<(String, String), LinkSet>,
     /// Nodes monitored on the default output, and their live links.
     monitored: std::collections::HashSet<String>,
     monitor_links: HashMap<String, LinkSet>,
@@ -1249,6 +1270,21 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
         }
     }
 
+    // ---- saved hardware sources → mix buses ----
+    let hardware_inputs: Vec<(String, String, u8, bool)> = s.hardware_inputs.iter()
+        .map(|(id, (source, level, muted))| (id.clone(), source.clone(), *level, *muted)).collect();
+    for (member, source_name, level, muted) in hardware_inputs {
+        let Some(source_id) = node_ids.get(&source_name).copied() else { continue; };
+        for (bus_name, bus_id) in &bus_ids {
+            let included = s.bus_members.get(bus_name).is_some_and(|members| members.contains(&member));
+            let key = (bus_name.clone(), member.clone());
+            let route_gain = s.hardware_route_gains.get(&key).copied().unwrap_or(100);
+            let effective = if included && !muted { (u16::from(route_gain) * u16::from(level) / 100) as u8 } else { 0 };
+            if effective == 100 { s.bus_member_gains.remove(&key); } else { s.bus_member_gains.insert(key, effective); }
+            reconcile_bus_member(&core, &mut s, MemberLink { bus_name, bus_id: *bus_id, member: &member, source_id, included: effective > 0 }, &mut eq_targets);
+        }
+    }
+
     // ---- mic → mix bus links (mic membership, mirrors the per-channel loop
     // above) - lets a Stream Mix carry your voice alongside its channels. ----
     let mic_id = node_ids.get(MIC_NODE).copied();
@@ -1266,6 +1302,45 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
             },
             &mut eq_targets,
         );
+    }
+
+    // ---- mix → selected physical outputs ----
+    // These are persistent destinations, unlike monitor links. Reconcile by
+    // name so unplug/replug events rebuild the exact requested link set.
+    let mix_outputs: Vec<(String, Vec<String>)> = s
+        .mix_outputs
+        .iter()
+        .map(|(mix, outputs)| (mix.clone(), outputs.clone()))
+        .collect();
+    for (mix_name, outputs) in mix_outputs {
+        let Some(mix_id) = bus_ids
+            .iter()
+            .find(|(name, _)| name == &mix_name)
+            .map(|(_, id)| *id)
+        else {
+            continue;
+        };
+        for output_name in outputs {
+            let target = node_ids.get(&output_name).copied();
+            let pairs = target
+                .map(|target| desired_pairs(&s, mix_id, target))
+                .unwrap_or_default();
+            let key = (mix_name.clone(), output_name);
+            let current: Vec<(u32, u32)> = s
+                .mix_output_links
+                .get(&key)
+                .map(|links| links.iter().map(|(out, input, _)| (*out, *input)).collect())
+                .unwrap_or_default();
+            if current != pairs {
+                s.mix_output_links.remove(&key);
+                if let (Some(target), false) = (target, pairs.is_empty()) {
+                    let created = create_links(&core, &mix_name, mix_id, target, &pairs);
+                    if !created.is_empty() {
+                        s.mix_output_links.insert(key, created);
+                    }
+                }
+            }
+        }
     }
 
     // ---- monitor links (listen on the default output, session scoped) ----
@@ -1609,6 +1684,8 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             s.send_gain_in_links.retain(|(bus, _), _| bus != &name);
             s.bus_member_gains.retain(|(bus, _), _| bus != &name);
             s.send_gain_failed.retain(|(bus, _)| bus != &name);
+            s.mix_outputs.remove(&name);
+            s.mix_output_links.retain(|(bus, _), _| bus != &name);
             if let Some(levels) = &s.levels {
                 levels.release(&name);
             }
@@ -1664,7 +1741,7 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                     .desired
                     .get(&bus_name)
                     .is_some_and(|(_, kind)| kind.is_mix());
-                let member_live = member == MIC_NODE
+                let member_live = member == MIC_NODE || s.hardware_inputs.contains_key(&member)
                     || s.desired
                         .get(&member)
                         .is_some_and(|(_, kind)| *kind == NodeKind::Channel);
@@ -1672,9 +1749,13 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                     let _ = reply.send(Err(SinkError::UnknownSink(bus_name)));
                     return;
                 }
+                let hardware_member = s.hardware_inputs.contains_key(&member);
                 let key = (bus_name, member);
                 // Touching the fader is the retry signal for a failed build.
                 s.send_gain_failed.remove(&key);
+                if hardware_member {
+                    s.hardware_route_gains.insert(key.clone(), percent);
+                }
                 if percent == 100 {
                     s.bus_member_gains.remove(&key);
                 } else {
@@ -1684,6 +1765,34 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                 if let Some(handle) = s.send_gains.get(&key) {
                     handle.set_gain_percent(percent);
                 }
+            }
+            ensure_all_links(state);
+            let _ = reply.send(Ok(()));
+        }
+        Cmd::SetHardwareInput { id, source_name, volume_percent, muted, reply } => {
+            state.borrow_mut().hardware_inputs.insert(id, (source_name, volume_percent.min(150), muted));
+            ensure_all_links(state);
+            let _ = reply.send(Ok(()));
+        }
+        Cmd::SetMixOutputs {
+            name,
+            outputs,
+            reply,
+        } => {
+            let enabled = outputs
+                .into_iter()
+                .filter(|binding| binding.enabled)
+                .map(|binding| binding.device)
+                .collect::<Vec<_>>();
+            {
+                let mut s = state.borrow_mut();
+                if !s.desired.get(&name).is_some_and(|(_, kind)| kind.is_mix()) {
+                    let _ = reply.send(Err(SinkError::UnknownSink(name)));
+                    return;
+                }
+                s.mix_outputs.insert(name.clone(), enabled.clone());
+                s.mix_output_links
+                    .retain(|(mix, output), _| mix != &name || enabled.contains(output));
             }
             ensure_all_links(state);
             let _ = reply.send(Ok(()));

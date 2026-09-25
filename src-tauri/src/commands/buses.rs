@@ -72,6 +72,24 @@ pub fn rename_bus(state: State<'_, AppState>, name: String, label: String) -> Re
     rename_bus_on(&state, name, label)
 }
 
+#[tauri::command]
+pub fn set_bus_icon(state: State<'_, AppState>, name: String, icon: String) -> Result<(), String> {
+    let defs = {
+        let mut mixer = state.lock_mixer()?;
+        mixer
+            .buses
+            .set_icon(&name, icon.clone())
+            .map_err(|e| e.to_string())?;
+        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
+            mix.icon = Some(icon);
+            mixer.routing.save().map_err(|e| e.to_string())?;
+        }
+        crate::commands::profiles::autosave_active(&mixer);
+        mixer.buses.clone()
+    };
+    defs.save().map_err(|e| e.to_string())
+}
+
 pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<(), String> {
     let _rebuild = state.lock_bus_rebuild();
     let (def, defs, prefs, all) = {
@@ -221,9 +239,6 @@ pub fn set_bus_members(
     // the backend - membership and the persisted definition could diverge.
     let stored = {
         let mixer = state.lock_mixer()?;
-        if crate::persistence::buses::is_master(&name) {
-            return Err("the master mix always carries every channel".to_string());
-        }
         let Some(def) = mixer.buses.get(&name) else {
             return Err("unknown mix".to_string());
         };
@@ -535,6 +550,7 @@ mod tests {
                 eq: mixer.eq.clone(),
                 trigger_device: None,
                 buses,
+                routing: mixer.routing.clone(),
             })
             .expect("save profile");
             mixer.active_profile = None;

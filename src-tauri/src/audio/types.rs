@@ -330,6 +330,8 @@ pub struct VirtualSink {
     /// Material Symbol for the strip icon.
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub icon_color: Option<String>,
     pub volume_percent: u8,
     pub muted: bool,
     /// Whether this channel feeds the Stream Mix source (what OBS records).

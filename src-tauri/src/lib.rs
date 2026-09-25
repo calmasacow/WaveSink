@@ -4,6 +4,7 @@ mod error;
 mod hotkeys;
 mod mixer;
 mod persistence;
+pub(crate) mod routing_model;
 mod state;
 
 use std::collections::HashMap;
@@ -73,6 +74,7 @@ pub fn run() {
             commands::buses::list_buses,
             commands::buses::add_bus,
             commands::buses::rename_bus,
+            commands::buses::set_bus_icon,
             commands::buses::remove_bus,
             commands::buses::set_bus_members,
             commands::buses::set_bus_mic,
@@ -82,6 +84,15 @@ pub fn run() {
             commands::buses::set_bus_mute,
             commands::buses::set_bus_member_gain,
             commands::buses::open_mix_fader_window,
+            commands::matrix::get_routing_model,
+            commands::matrix::add_hardware_input,
+            commands::matrix::set_route_cell,
+            commands::matrix::set_input_level,
+            commands::matrix::set_mix_monitor,
+            commands::matrix::clear_mix_monitor,
+            commands::matrix::set_mix_outputs,
+            commands::matrix::set_hidden_devices,
+            commands::matrix::set_input_fx,
             commands::routing::route_app_to_channel,
             commands::routing::set_channel_volume,
             commands::routing::toggle_channel_mute,

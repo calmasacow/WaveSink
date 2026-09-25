@@ -10,6 +10,9 @@ import type {
   ProfileInfo,
   SeenApp,
   VirtualSink,
+  RoutingModel,
+  RouteCell,
+  FxChain,
 } from "../types";
 
 // Faders fire on every pointer move; debounce per target so a drag doesn't
@@ -36,6 +39,14 @@ function debouncedInvoke(
 export type Levels = Record<string, [number, number]>;
 
 interface MixerStore {
+  routing: RoutingModel | null;
+  fetchRouting: () => Promise<void>;
+  setRouteCell: (inputId: string, mixId: string, cell: RouteCell) => Promise<void>;
+  setMixMonitor: (mixId: string | null) => Promise<void>;
+  setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
+  setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
+  setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
+  addHardwareInput: (sourceName: string, label: string, icon: string | null, iconColor: string | null) => Promise<boolean>;
   channels: VirtualSink[];
   appStreams: AppStream[];
   /** Live VU levels; stays empty under the pactl fallback backend. */
@@ -90,7 +101,7 @@ interface MixerStore {
     sinkName: string | null,
   ) => Promise<void>;
   /** Channel management: labels are free-form, sink names are stable. */
-  addChannel: (label: string, icon: string | null) => Promise<void>;
+  addChannel: (label: string, icon: string | null, iconColor?: string | null) => Promise<boolean>;
   renameChannel: (sinkName: string, label: string) => Promise<void>;
   removeChannel: (sinkName: string) => Promise<void>;
   /** Visual-only reorder while dragging a strip. */
@@ -103,6 +114,7 @@ interface MixerStore {
   fetchBuses: () => Promise<void>;
   addBus: (label: string) => Promise<void>;
   renameBus: (name: string, label: string) => Promise<void>;
+  setBusIcon: (name: string, icon: string) => Promise<void>;
   removeBus: (name: string) => Promise<void>;
   setBusMembers: (name: string, channels: string[]) => Promise<void>;
   /** Manual vs auto-include mode (carried set preserved). */
@@ -168,6 +180,47 @@ interface MixerStore {
 const jsonEqual = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export const useMixerStore = create<MixerStore>((set, get) => ({
+  routing: null,
+  fetchRouting: async () => {
+    try {
+      const routing = await invoke<RoutingModel>("get_routing_model");
+      if (!jsonEqual(get().routing, routing)) set({ routing });
+    } catch (e) { set({ error: String(e) }); }
+  },
+  setRouteCell: async (inputId, mixId, cell) => {
+    set((s) => ({ routing: s.routing ? { ...s.routing, routes: { ...s.routing.routes, [inputId]: { ...s.routing.routes[inputId], [mixId]: cell } } } : null }));
+    try {
+      await invoke("set_route_cell", { inputId, mixId, enabled: cell.enabled, sendPercent: cell.send_percent, muted: cell.muted });
+    } catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+  },
+  setMixMonitor: async (mixId) => {
+    set((s) => ({ routing: s.routing ? { ...s.routing, monitor_mix: mixId } : null }));
+    try {
+      await invoke(mixId ? "set_mix_monitor" : "clear_mix_monitor", mixId ? { mixId } : {});
+    } catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+  },
+  setInputFx: async (inputId, fx) => {
+    set((s) => ({ routing: s.routing ? { ...s.routing, inputs: s.routing.inputs.map((input) => input.id === inputId ? { ...input, fx } : input) } : null }));
+    try { await invoke("set_input_fx", { inputId, fx }); }
+    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+  },
+  setInputLevel: async (inputId, volume, muted) => {
+    set((s) => ({ routing: s.routing ? { ...s.routing, inputs: s.routing.inputs.map((input) => input.id === inputId ? { ...input, volume_percent: volume, muted } : input) } : null }));
+    try { await invoke("set_input_level", { inputId, volumePercent: volume, muted }); }
+    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+  },
+  addHardwareInput: async (sourceName, label, icon, iconColor) => {
+    try {
+      await invoke("add_hardware_input", { sourceName, label, icon, iconColor });
+      await get().fetchRouting();
+      return true;
+    } catch (e) { set({ error: String(e) }); return false; }
+  },
+  setMixOutputs: async (mixId, devices) => {
+    set((s) => ({ routing: s.routing ? { ...s.routing, mixes: s.routing.mixes.map((mix) => mix.id === mixId ? { ...mix, output_bindings: devices.map((device) => ({ device, enabled: true })) } : mix) } : null }));
+    try { await invoke("set_mix_outputs", { mixId, outputs: devices.map((device) => ({ device, enabled: true })) }); }
+    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+  },
   channels: [],
   appStreams: [],
   levels: {},
@@ -275,6 +328,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchEq(),
         get().fetchMic(),
         get().fetchBuses(),
+        get().fetchRouting(),
       ]);
       // Active profile is tracked backend-side (survives restarts).
       try {
@@ -493,6 +547,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       get().fetchSeenApps(),
       get().fetchProfiles(),
       get().fetchBuses(),
+      get().fetchRouting(),
     ]);
   },
 
@@ -567,6 +622,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchEq(),
         get().fetchSeenApps(),
         get().fetchBuses(),
+        get().fetchRouting(),
       ]);
     } catch (e) {
       set({ error: String(e) });
@@ -583,13 +639,15 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }
   },
 
-  addChannel: async (label, icon) => {
+  addChannel: async (label, icon, iconColor = "blue") => {
     try {
-      await invoke("add_channel", { label, icon });
+      await invoke("add_channel", { label, icon, iconColor });
       // Buses too: the master (and auto-include mixes) absorb the channel.
-      await Promise.all([get().fetchChannels(), get().fetchOutputs(), get().fetchBuses()]);
+      await Promise.all([get().fetchChannels(), get().fetchOutputs(), get().fetchBuses(), get().fetchRouting()]);
+      return true;
     } catch (e) {
       set({ error: String(e) });
+      return false;
     }
   },
 
@@ -608,6 +666,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       await invoke("add_bus", { label });
       await get().fetchBuses();
+      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
     }
@@ -623,6 +682,11 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       await get().fetchBuses();
     }
+  },
+  setBusIcon: async (name, icon) => {
+    set((s) => ({ buses: s.buses.map((bus) => bus.name === name ? { ...bus, icon } : bus) }));
+    try { await invoke("set_bus_icon", { name, icon }); await get().fetchRouting(); }
+    catch (e) { set({ error: String(e) }); await get().fetchBuses(); }
   },
 
   removeBus: async (name) => {

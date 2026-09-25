@@ -66,6 +66,40 @@ impl AppState {
         // them as soon as the sinks exist.
         let channel_defs = crate::persistence::channels::Channels::load();
         let buses = crate::persistence::buses::Buses::load(&channel_defs);
+        let outputs = crate::persistence::outputs::ChannelOutputs::load();
+        let mic = crate::persistence::mic::load();
+        let mut routing =
+            crate::routing_model::RoutingModel::load_or_migrate(&channel_defs, &buses, &outputs);
+        if mic.enabled && !routing.inputs.iter().any(|input| input.id == "sink_mic") {
+            let id = "sink_mic".to_string();
+            routing.inputs.push(crate::routing_model::InputDef {
+                id: id.clone(),
+                label: "Microphone".into(),
+                icon: Some("mic".into()),
+                icon_color: Some("red".into()),
+                kind: crate::routing_model::InputKind::Hardware,
+                source_name: id.clone(),
+                volume_percent: 100,
+                muted: false,
+                fx: crate::routing_model::FxChain {
+                    gate_enabled: mic.gate_enabled,
+                    compressor_enabled: mic.comp_enabled,
+                    limiter_enabled: mic.limiter_enabled,
+                    ..Default::default()
+                },
+                order: routing.inputs.len() as u32,
+            });
+            for bus in &buses.buses {
+                routing.routes.entry(id.clone()).or_default().insert(
+                    bus.name.clone(),
+                    crate::routing_model::RouteCell {
+                        enabled: bus.mic,
+                        ..Default::default()
+                    },
+                );
+            }
+            let _ = routing.save();
+        }
         let active_profile = crate::persistence::active::load();
         // Cache the active profile's trigger once so autosave never has to
         // re-read the profile file to preserve it.
@@ -77,11 +111,12 @@ impl AppState {
         let mut mixer = MixerState {
             assignments: crate::persistence::assignments::Assignments::load(),
             aliases: crate::persistence::aliases::Aliases::load(),
-            outputs: crate::persistence::outputs::ChannelOutputs::load(),
+            outputs,
             eq: crate::persistence::eq::ChannelEq::load(),
-            mic: crate::persistence::mic::load(),
+            mic,
             channel_defs,
             buses,
+            routing,
             seen: crate::persistence::seen::SeenApps::load(),
             active_profile,
             active_trigger,

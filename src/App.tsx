@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { TitleBar } from "./components/TitleBar/TitleBar";
-import { MixerBoard } from "./components/MixerBoard/MixerBoard";
+import { RoutingTable } from "./components/MixerBoard/RoutingTable";
 import { AppList } from "./components/AppList/AppList";
 import { MicScreen } from "./components/Mic/MicScreen";
 import { OnboardingModal } from "./components/Onboarding/OnboardingModal";
@@ -34,7 +34,7 @@ export default function App() {
     nav === "settings" ? { label: "Settings" } : (NAV.find((n) => n.id === nav) ?? NAV[0]);
 
   let screen;
-  if (nav === "mixer") screen = <MixerBoard />;
+  if (nav === "mixer") screen = <RoutingTable />;
   else if (nav === "apps") screen = <AppList />;
   else if (nav === "mic") screen = <MicScreen />;
   else screen = <SettingsScreen />;

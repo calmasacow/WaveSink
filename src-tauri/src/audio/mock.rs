@@ -206,6 +206,8 @@ impl AudioBackend for MockBackend {
         Ok(())
     }
 
+    fn set_hardware_input(&self, _id: &str, _source_name: &str, _volume_percent: u8, _muted: bool) -> Result<(), SinkError> { Ok(()) }
+
     fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
         Ok(())
     }
@@ -215,6 +217,14 @@ impl AudioBackend for MockBackend {
         _bus_name: &str,
         _member: &str,
         _percent: u8,
+    ) -> Result<(), SinkError> {
+        Ok(())
+    }
+
+    fn set_mix_outputs(
+        &self,
+        _name: &str,
+        _outputs: &[crate::routing_model::OutputBinding],
     ) -> Result<(), SinkError> {
         Ok(())
     }

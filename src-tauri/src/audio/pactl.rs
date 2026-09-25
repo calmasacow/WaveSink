@@ -361,6 +361,8 @@ impl AudioBackend for PactlBackend {
         ))
     }
 
+    fn set_hardware_input(&self, _id: &str, _source_name: &str, _volume_percent: u8, _muted: bool) -> Result<(), SinkError> { Err(SinkError::Config("hardware matrix inputs require native PipeWire".into())) }
+
     fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
         Err(SinkError::Config(
             "mic-in-mix requires the native PipeWire backend".into(),
@@ -376,6 +378,14 @@ impl AudioBackend for PactlBackend {
         Err(SinkError::Config(
             "per-mix send levels require the native PipeWire backend".into(),
         ))
+    }
+
+    fn set_mix_outputs(
+        &self,
+        _name: &str,
+        _outputs: &[crate::routing_model::OutputBinding],
+    ) -> Result<(), SinkError> {
+        Err(SinkError::Config("mix physical outputs require native PipeWire".into()))
     }
 
     fn set_monitor(&self, _name: &str, _enabled: bool) -> Result<(), SinkError> {
