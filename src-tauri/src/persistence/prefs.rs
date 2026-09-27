@@ -5,16 +5,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-/// How Sink's devices are labeled in other apps' device lists.
+/// Legacy device-label preference retained for config compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceLabelStyle {
     /// "Game"
     #[default]
     Plain,
-    /// "Game (Sink)"
+    /// "Game (WaveSink)"
     Suffix,
-    /// "Sink · Game"
+    /// "WaveSink · Game"
     Prefix,
 }
 
@@ -94,14 +94,10 @@ impl Prefs {
         Ok(())
     }
 
-    /// Decorate a device label per the chosen style (applied at node
-    /// creation; stored labels stay raw).
+    /// Every Sink-owned PipeWire node carries this suffix so system device
+    /// pickers clearly distinguish virtual channels from physical hardware.
     pub fn decorate(&self, label: &str) -> String {
-        match self.device_label_style {
-            DeviceLabelStyle::Plain => label.to_string(),
-            DeviceLabelStyle::Suffix => format!("{label} (Sink)"),
-            DeviceLabelStyle::Prefix => format!("Sink · {label}"),
-        }
+        format!("{label} (WaveSink)")
     }
 }
 
@@ -112,11 +108,11 @@ mod tests {
     #[test]
     fn decorate_styles() {
         let mut p = Prefs::default();
-        assert_eq!(p.decorate("Game"), "Game");
+        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
         p.device_label_style = DeviceLabelStyle::Suffix;
-        assert_eq!(p.decorate("Game"), "Game (Sink)");
+        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
         p.device_label_style = DeviceLabelStyle::Prefix;
-        assert_eq!(p.decorate("Game"), "Sink · Game");
+        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
     }
 
     #[test]

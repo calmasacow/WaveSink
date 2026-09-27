@@ -165,8 +165,13 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
     // ---- mix bus reconciliation ----
     let _rebuild = state.lock_bus_rebuild();
     let mut target_buses = profile.buses.clone();
+    for bus in &mut target_buses.buses {
+        bus.role = crate::persistence::buses::MixRole::Recording;
+    }
     let names: Vec<String> = profile.channels.iter().map(|c| c.name.clone()).collect();
-    target_buses.buses.retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
+    target_buses
+        .buses
+        .retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
     let current_buses = {
         let mixer = state.lock_mixer()?;
         mixer.buses.clone()
@@ -212,7 +217,10 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
         crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
         if let Some(mix) = profile.routing.mixes.iter().find(|mix| mix.id == bus.name) {
-            if let Err(e) = state.backend.set_mix_outputs(&bus.name, &mix.output_bindings) {
+            if let Err(e) = state
+                .backend
+                .set_mix_outputs(&bus.name, &mix.output_bindings)
+            {
                 eprintln!("sink: profile output routing for {} failed: {e}", bus.name);
             }
         }

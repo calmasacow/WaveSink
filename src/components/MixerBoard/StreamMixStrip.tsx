@@ -9,7 +9,6 @@ import { MenuCheckItem, MenuItem } from "../MenuItem";
 import { Popover } from "../Popover";
 import { Fader } from "./Fader";
 import { VolumeReadout } from "./VolumeReadout";
-import { MixRoleSelect } from "./MixRoleSelect";
 import { StripName } from "./StripName";
 import { VuMeter } from "./VuMeter";
 
@@ -25,7 +24,6 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
   const setBusMembers = useMixerStore((s) => s.setBusMembers);
   const setBusExclude = useMixerStore((s) => s.setBusExclude);
   const setBusMic = useMixerStore((s) => s.setBusMic);
-  const setBusRole = useMixerStore((s) => s.setBusRole);
   const micEnabled = useMixerStore((s) => s.micConfig?.enabled ?? false);
   const renameBus = useMixerStore((s) => s.renameBus);
   const removeBus = useMixerStore((s) => s.removeBus);
@@ -146,8 +144,6 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
           <Ms name="headphones" style={{ fontSize: 16 }} />
         </button>
       </div>
-
-      <MixRoleSelect role={bus.role} onChange={(role) => void setBusRole(bus.name, role)} />
 
       <ConfirmModal
         open={confirmingDelete}

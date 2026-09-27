@@ -73,7 +73,13 @@ pub trait AudioBackend: Send + Sync {
 
     /// Register a matrix hardware source. Volume/mute apply only to Sink's
     /// mix sends, never to the physical device's global PipeWire controls.
-    fn set_hardware_input(&self, id: &str, source_name: &str, volume_percent: u8, muted: bool) -> Result<(), SinkError>;
+    fn set_hardware_input(
+        &self,
+        id: &str,
+        source_name: &str,
+        volume_percent: u8,
+        muted: bool,
+    ) -> Result<(), SinkError>;
 
     /// Replace physical playback targets for a mix. Bindings are independent
     /// from session-only monitoring and may contain more than one device.

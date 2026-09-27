@@ -206,7 +206,15 @@ impl AudioBackend for MockBackend {
         Ok(())
     }
 
-    fn set_hardware_input(&self, _id: &str, _source_name: &str, _volume_percent: u8, _muted: bool) -> Result<(), SinkError> { Ok(()) }
+    fn set_hardware_input(
+        &self,
+        _id: &str,
+        _source_name: &str,
+        _volume_percent: u8,
+        _muted: bool,
+    ) -> Result<(), SinkError> {
+        Ok(())
+    }
 
     fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
         Ok(())

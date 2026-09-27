@@ -16,14 +16,6 @@ interface DefaultDevices {
   input: string | null;
 }
 
-type LabelStyle = "plain" | "suffix" | "prefix";
-
-const LABEL_STYLES: { value: LabelStyle; label: string; example: string }[] = [
-  { value: "plain", label: "Plain", example: "Game" },
-  { value: "suffix", label: "Suffix", example: "Game (Sink)" },
-  { value: "prefix", label: "Prefix", example: "Sink · Game" },
-];
-
 /** Card row with a device dropdown for picking a system default. */
 function DeviceRow({
   icon,
@@ -93,8 +85,6 @@ export function SettingsScreen() {
   const [backendNative, setBackendNative] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
   const [defaults, setDefaults] = useState<DefaultDevices>({ output: null, input: null });
-  const [labelStyle, setLabelStyle] = useState<LabelStyle>("plain");
-  const [labelStyleOpen, setLabelStyleOpen] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const outputDevices = useMixerStore((s) => s.outputDevices);
@@ -109,9 +99,8 @@ export function SettingsScreen() {
     void invoke<DefaultDevices>("get_default_devices")
       .then(setDefaults)
       .catch(() => {});
-    void invoke<{ device_label_style: LabelStyle; start_minimized: boolean }>("get_prefs")
+    void invoke<{ start_minimized: boolean }>("get_prefs")
       .then((p) => {
-        setLabelStyle(p.device_label_style);
         setStartMinimized(p.start_minimized);
       })
       .catch(() => {});
@@ -122,16 +111,6 @@ export function SettingsScreen() {
     try {
       await invoke(kind === "output" ? "set_default_output" : "set_default_input", { name });
       setDefaults((d) => ({ ...d, [kind]: name }));
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const pickLabelStyle = async (style: LabelStyle) => {
-    try {
-      await invoke("set_device_label_style", { style });
-      setLabelStyle(style);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -207,38 +186,10 @@ export function SettingsScreen() {
         <div className="section-label">Preferences</div>
         <div className="card" style={{ padding: "var(--sp-2)" }}>
           <div className="row">
-            <div className="ricon">
-              <Ms name="label" />
-            </div>
+            <div className="ricon"><Ms name="label" /></div>
             <div className="rmain">
               <div className="rtitle">Device naming</div>
-              <div className="rsub">Naming scheme for Sink-managed devices</div>
-            </div>
-            <div style={{ position: "relative" }}>
-              <button type="button" className="select" onClick={() => setLabelStyleOpen((o) => !o)}>
-                <span>{LABEL_STYLES.find((s) => s.value === labelStyle)?.label}</span>
-                <Ms name="expand_more" />
-              </button>
-              <Popover
-                open={labelStyleOpen}
-                onClose={() => setLabelStyleOpen(false)}
-                side="bottom"
-                align="end"
-              >
-                {LABEL_STYLES.map((s) => (
-                  <MenuItem
-                    key={s.value}
-                    selected={s.value === labelStyle}
-                    showCheck
-                    onClick={() => {
-                      void pickLabelStyle(s.value);
-                      setLabelStyleOpen(false);
-                    }}
-                  >
-                    {s.example}
-                  </MenuItem>
-                ))}
-              </Popover>
+              <div className="rsub">System audio pickers show every virtual device as Name (WaveSink)</div>
             </div>
           </div>
           <DeviceRow

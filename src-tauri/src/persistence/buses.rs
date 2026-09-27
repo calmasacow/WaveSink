@@ -47,8 +47,7 @@ pub struct BusDef {
     /// member's own volume. Keyed by sink name, or "sink_mic".
     #[serde(default)]
     pub member_gains: HashMap<String, u8>,
-    /// Which device list the mix shows up in. Named rather than a flag so
-    /// a third role can be added without rewriting anyone's config.
+    /// Legacy setting. Mixes are always recording/capture devices.
     #[serde(default)]
     pub role: MixRole,
 }
@@ -62,12 +61,6 @@ pub enum MixRole {
     Recording,
     /// A playback device, captured through its monitor.
     Playback,
-}
-
-impl MixRole {
-    pub fn is_recording(self) -> bool {
-        matches!(self, Self::Recording)
-    }
 }
 
 fn default_volume() -> u8 {
@@ -156,9 +149,9 @@ impl Buses {
                         Self::default()
                     }
                 };
-                buses.buses.retain(|bus| {
-                    !(bus.name == "sink_stream" && bus.label == "Master Mix")
-                });
+                buses
+                    .buses
+                    .retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
                 buses.clamp_loaded();
                 buses
             }
@@ -170,6 +163,7 @@ impl Buses {
     /// of riding through to the UI (the `EqConfig::clamp_ranges` rule).
     fn clamp_loaded(&mut self) {
         for bus in &mut self.buses {
+            bus.role = MixRole::Recording;
             bus.volume_percent = bus.volume_percent.min(150);
             bus.member_gains.retain(|_, percent| {
                 *percent = (*percent).min(150);
@@ -368,7 +362,9 @@ mod tests {
             r#"{"buses":[{"name":"sink_stream","label":"Master Mix","channels":[],"exclude":false}]}"#,
         )
         .unwrap();
-        buses.buses.retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
+        buses
+            .buses
+            .retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
         assert!(buses.buses.is_empty());
     }
 }

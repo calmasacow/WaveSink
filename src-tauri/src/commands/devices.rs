@@ -360,7 +360,13 @@ pub fn init_virtual_devices(
                 .iter()
                 .map(|mix| (mix.id.clone(), mix.output_bindings.clone()))
                 .collect::<Vec<_>>(),
-            mixer.routing.inputs.iter().filter(|input| input.kind == crate::routing_model::InputKind::Hardware).cloned().collect::<Vec<_>>(),
+            mixer
+                .routing
+                .inputs
+                .iter()
+                .filter(|input| input.kind == crate::routing_model::InputKind::Hardware)
+                .cloned()
+                .collect::<Vec<_>>(),
         )
     };
     if let Err(e) = buses.save() {
@@ -421,7 +427,12 @@ pub fn init_virtual_devices(
         }
     }
     for input in &hardware_inputs {
-        if let Err(e) = state.backend.set_hardware_input(&input.id, &input.source_name, input.volume_percent, input.muted) {
+        if let Err(e) = state.backend.set_hardware_input(
+            &input.id,
+            &input.source_name,
+            input.volume_percent,
+            input.muted,
+        ) {
             eprintln!("sink: hardware input {} failed: {e}", input.id);
         }
     }

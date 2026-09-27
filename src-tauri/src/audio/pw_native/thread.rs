@@ -413,7 +413,7 @@ fn setup_and_run(
                                 NodeKind::Channel => {
                                     s.owned_sinks.remove(&name);
                                 }
-                                NodeKind::MixSource | NodeKind::MixSink => {
+                                NodeKind::MixSource => {
                                     s.bus_sources.remove(&name);
                                 }
                                 NodeKind::Mic => {}
@@ -432,7 +432,7 @@ fn setup_and_run(
                                         false
                                     }
                                 }
-                                NodeKind::Channel | NodeKind::MixSource | NodeKind::MixSink => {
+                                NodeKind::Channel | NodeKind::MixSource => {
                                     s.node_by_name(&name).is_some()
                                 }
                             };
@@ -463,7 +463,7 @@ fn setup_and_run(
                                         NodeKind::Channel => {
                                             s.owned_sinks.insert(name, proxy);
                                         }
-                                        NodeKind::MixSource | NodeKind::MixSink => {
+                                        NodeKind::MixSource => {
                                             s.bus_sources.insert(name, proxy);
                                         }
                                         NodeKind::Mic => s.mic_source = Some(proxy),
@@ -1271,17 +1271,44 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
     }
 
     // ---- saved hardware sources → mix buses ----
-    let hardware_inputs: Vec<(String, String, u8, bool)> = s.hardware_inputs.iter()
-        .map(|(id, (source, level, muted))| (id.clone(), source.clone(), *level, *muted)).collect();
+    let hardware_inputs: Vec<(String, String, u8, bool)> = s
+        .hardware_inputs
+        .iter()
+        .map(|(id, (source, level, muted))| (id.clone(), source.clone(), *level, *muted))
+        .collect();
     for (member, source_name, level, muted) in hardware_inputs {
-        let Some(source_id) = node_ids.get(&source_name).copied() else { continue; };
+        let Some(source_id) = node_ids.get(&source_name).copied() else {
+            continue;
+        };
         for (bus_name, bus_id) in &bus_ids {
-            let included = s.bus_members.get(bus_name).is_some_and(|members| members.contains(&member));
+            let included = s
+                .bus_members
+                .get(bus_name)
+                .is_some_and(|members| members.contains(&member));
             let key = (bus_name.clone(), member.clone());
             let route_gain = s.hardware_route_gains.get(&key).copied().unwrap_or(100);
-            let effective = if included && !muted { (u16::from(route_gain) * u16::from(level) / 100) as u8 } else { 0 };
-            if effective == 100 { s.bus_member_gains.remove(&key); } else { s.bus_member_gains.insert(key, effective); }
-            reconcile_bus_member(&core, &mut s, MemberLink { bus_name, bus_id: *bus_id, member: &member, source_id, included: effective > 0 }, &mut eq_targets);
+            let effective = if included && !muted {
+                (u16::from(route_gain) * u16::from(level) / 100) as u8
+            } else {
+                0
+            };
+            if effective == 100 {
+                s.bus_member_gains.remove(&key);
+            } else {
+                s.bus_member_gains.insert(key, effective);
+            }
+            reconcile_bus_member(
+                &core,
+                &mut s,
+                MemberLink {
+                    bus_name,
+                    bus_id: *bus_id,
+                    member: &member,
+                    source_id,
+                    included: effective > 0,
+                },
+                &mut eq_targets,
+            );
         }
     }
 
@@ -1399,32 +1426,26 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
     s.eq_desired_targets = eq_targets;
 }
 
-/// A node Sink creates and keeps alive. A mix comes in two shapes based on
-/// which device list the user put it in; the rest of the loop asks `is_mix`.
+/// A node Sink creates and keeps alive. Mixes are capture-only sources.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeKind {
     Channel,
     MixSource,
-    MixSink,
     Mic,
 }
 
 impl NodeKind {
-    fn mix(role: crate::persistence::buses::MixRole) -> Self {
-        if role.is_recording() {
-            Self::MixSource
-        } else {
-            Self::MixSink
-        }
+    fn mix(_role: crate::persistence::buses::MixRole) -> Self {
+        Self::MixSource
     }
 
     fn is_mix(self) -> bool {
-        matches!(self, Self::MixSource | Self::MixSink)
+        matches!(self, Self::MixSource)
     }
 
     fn media_class(self) -> &'static str {
         match self {
-            Self::Channel | Self::MixSink => SINK_CLASS,
+            Self::Channel => SINK_CLASS,
             Self::MixSource | Self::Mic => VIRTUAL_SOURCE_CLASS,
         }
     }
@@ -1741,7 +1762,8 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                     .desired
                     .get(&bus_name)
                     .is_some_and(|(_, kind)| kind.is_mix());
-                let member_live = member == MIC_NODE || s.hardware_inputs.contains_key(&member)
+                let member_live = member == MIC_NODE
+                    || s.hardware_inputs.contains_key(&member)
                     || s.desired
                         .get(&member)
                         .is_some_and(|(_, kind)| *kind == NodeKind::Channel);
@@ -1769,8 +1791,17 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             ensure_all_links(state);
             let _ = reply.send(Ok(()));
         }
-        Cmd::SetHardwareInput { id, source_name, volume_percent, muted, reply } => {
-            state.borrow_mut().hardware_inputs.insert(id, (source_name, volume_percent.min(150), muted));
+        Cmd::SetHardwareInput {
+            id,
+            source_name,
+            volume_percent,
+            muted,
+            reply,
+        } => {
+            state
+                .borrow_mut()
+                .hardware_inputs
+                .insert(id, (source_name, volume_percent.min(150), muted));
             ensure_all_links(state);
             let _ = reply.send(Ok(()));
         }
@@ -2250,7 +2281,10 @@ mod tests {
             NodeKind::mix(MixRole::Recording).media_class(),
             VIRTUAL_SOURCE_CLASS
         );
-        assert_eq!(NodeKind::mix(MixRole::Playback).media_class(), SINK_CLASS);
+        assert_eq!(
+            NodeKind::mix(MixRole::Playback).media_class(),
+            VIRTUAL_SOURCE_CLASS
+        );
         // Both shapes are still a mix: the member, mic and send-level
         // commands all gate on that, and one of them is a sink.
         assert!(

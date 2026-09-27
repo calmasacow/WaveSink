@@ -186,7 +186,12 @@ impl Channels {
 
     /// Add a channel for `label`, generating a unique reserved-safe sink
     /// name. Returns the new definition.
-    pub fn add(&mut self, label: &str, icon: Option<String>, icon_color: Option<String>) -> Result<ChannelDef, SinkError> {
+    pub fn add(
+        &mut self,
+        label: &str,
+        icon: Option<String>,
+        icon_color: Option<String>,
+    ) -> Result<ChannelDef, SinkError> {
         let label = label.trim();
         if label.is_empty() || label.len() > 24 {
             return Err(SinkError::Config(
@@ -283,10 +288,14 @@ mod tests {
     #[test]
     fn add_generates_unique_safe_names() {
         let mut c = Channels::default();
-        let d = c.add("Voice Chat!", Some("mic".into()), None).expect("adds");
+        let d = c
+            .add("Voice Chat!", Some("mic".into()), None)
+            .expect("adds");
         assert_eq!(d.name, "sink_voice_chat");
         assert_eq!(d.icon.as_deref(), Some("mic"));
-        let d2 = c.add("Voice Chat", None, None).expect("adds duplicate label");
+        let d2 = c
+            .add("Voice Chat", None, None)
+            .expect("adds duplicate label");
         assert_eq!(d2.name, "sink_voice_chat_2");
         // Reserved collision: label "mic" must not produce sink_mic.
         let d3 = c.add("Mic", None, None).expect("adds");
@@ -299,7 +308,9 @@ mod tests {
         // All-special-char labels slugify to empty → "channel" fallback.
         let d = c.add("!!!", None, None).expect("adds");
         assert_eq!(d.name, "sink_channel");
-        let d2 = c.add("___", None, None).expect("adds second pathological label");
+        let d2 = c
+            .add("___", None, None)
+            .expect("adds second pathological label");
         assert_eq!(d2.name, "sink_channel_2");
         // Whitespace-only labels are rejected outright.
         assert!(c.add("   ", None, None).is_err());

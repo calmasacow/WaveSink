@@ -61,7 +61,10 @@ pub fn add_hardware_input(
     icon: Option<String>,
     icon_color: Option<String>,
 ) -> Result<(), String> {
-    let devices = state.backend.list_input_devices().map_err(|e| e.to_string())?;
+    let devices = state
+        .backend
+        .list_input_devices()
+        .map_err(|e| e.to_string())?;
     if !devices.iter().any(|device| device.name == source_name) {
         return Err("hardware input is no longer available".into());
     }
@@ -70,7 +73,12 @@ pub fn add_hardware_input(
         return Err("input label must be 1-24 characters".into());
     }
     let mut mixer = state.lock_mixer()?;
-    if mixer.routing.inputs.iter().any(|input| input.source_name == source_name) {
+    if mixer
+        .routing
+        .inputs
+        .iter()
+        .any(|input| input.source_name == source_name)
+    {
         return Err("hardware input is already in the matrix".into());
     }
     let id = format!("hardware:{source_name}");
@@ -95,12 +103,20 @@ pub fn add_hardware_input(
             .map(|mix| (mix.id, RouteCell::default()))
             .collect(),
     );
-    state.backend.set_hardware_input(
-        &mixer.routing.inputs.last().expect("inserted input").id,
-        &mixer.routing.inputs.last().expect("inserted input").source_name,
-        100,
-        false,
-    ).map_err(|e| e.to_string())?;
+    state
+        .backend
+        .set_hardware_input(
+            &mixer.routing.inputs.last().expect("inserted input").id,
+            &mixer
+                .routing
+                .inputs
+                .last()
+                .expect("inserted input")
+                .source_name,
+            100,
+            false,
+        )
+        .map_err(|e| e.to_string())?;
     mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())
@@ -130,7 +146,10 @@ pub fn set_route_cell(
         model
             .set_cell(&input_id, &mix_id, cell.clone())
             .map_err(|e| e.to_string())?;
-        let hardware = model.inputs.iter().any(|input| input.id == input_id && input.kind == InputKind::Hardware);
+        let hardware = model
+            .inputs
+            .iter()
+            .any(|input| input.id == input_id && input.kind == InputKind::Hardware);
         model.save().map_err(|e| e.to_string())?;
         mixer.routing = model;
         let all = mixer
@@ -194,10 +213,19 @@ pub fn set_route_cell(
 }
 
 #[tauri::command]
-pub fn set_input_level(state: State<'_, AppState>, input_id: String, volume_percent: u8, muted: bool) -> Result<(), String> {
+pub fn set_input_level(
+    state: State<'_, AppState>,
+    input_id: String,
+    volume_percent: u8,
+    muted: bool,
+) -> Result<(), String> {
     let (source_name, kind) = {
         let mut mixer = state.lock_mixer()?;
-        let input = mixer.routing.inputs.iter_mut().find(|input| input.id == input_id)
+        let input = mixer
+            .routing
+            .inputs
+            .iter_mut()
+            .find(|input| input.id == input_id)
             .ok_or_else(|| format!("unknown input {input_id}"))?;
         input.volume_percent = volume_percent.min(150);
         input.muted = muted;
@@ -208,7 +236,10 @@ pub fn set_input_level(state: State<'_, AppState>, input_id: String, volume_perc
         (source_name, kind)
     };
     if kind == InputKind::Hardware {
-        state.backend.set_hardware_input(&input_id, &source_name, volume_percent, muted).map_err(|e| e.to_string())?;
+        state
+            .backend
+            .set_hardware_input(&input_id, &source_name, volume_percent, muted)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

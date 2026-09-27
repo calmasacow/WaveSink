@@ -355,7 +355,11 @@ mod tests {
 
     #[test]
     fn empty_mix_set_stays_empty() {
-        let model = RoutingModel::from_legacy(&Channels::default(), &Buses::default(), &ChannelOutputs::default());
+        let model = RoutingModel::from_legacy(
+            &Channels::default(),
+            &Buses::default(),
+            &ChannelOutputs::default(),
+        );
         assert!(model.mixes.is_empty());
     }
 }

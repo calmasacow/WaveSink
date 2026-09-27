@@ -208,8 +208,20 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
-    fn set_hardware_input(&self, id: &str, source_name: &str, volume_percent: u8, muted: bool) -> Result<(), SinkError> {
-        self.request(|reply| Cmd::SetHardwareInput { id: id.to_string(), source_name: source_name.to_string(), volume_percent, muted, reply })
+    fn set_hardware_input(
+        &self,
+        id: &str,
+        source_name: &str,
+        volume_percent: u8,
+        muted: bool,
+    ) -> Result<(), SinkError> {
+        self.request(|reply| Cmd::SetHardwareInput {
+            id: id.to_string(),
+            source_name: source_name.to_string(),
+            volume_percent,
+            muted,
+            reply,
+        })
     }
 
     fn set_mix_outputs(
