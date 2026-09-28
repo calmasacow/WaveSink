@@ -9,7 +9,8 @@ export const THEMES: { id: Exclude<ThemeId, "omarchy">; label: string; swatch: s
   { id: "gruvbox-dark", label: "Gruvbox", swatch: ["#282828", "#fe8019", "#b8bb26"] },
 ];
 
-const STORAGE_KEY = "sink-theme";
+const STORAGE_KEY = "wavesink-theme";
+const LEGACY_STORAGE_KEY = "sink-theme";
 const omarchyProperties = [
   "--bg-main",
   "--bg-sidebar",
@@ -97,7 +98,11 @@ function apply(theme: ThemeId, omarchy: OmarchyTheme | null) {
 }
 
 function initial(): ThemeId {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (saved && !localStorage.getItem(STORAGE_KEY)) {
+    localStorage.setItem(STORAGE_KEY, saved);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }
   return saved === "omarchy" || THEMES.some((t) => t.id === saved)
     ? (saved as ThemeId)
     : "original";

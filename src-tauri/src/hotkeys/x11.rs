@@ -39,7 +39,7 @@ pub fn connect(config: &HotkeyConfig, app: AppHandle) -> Result<Handle, String> 
             .unwrap_or(action.x11_trigger());
         if let Err(e) = handle.bind(action, trigger) {
             eprintln!(
-                "sink: hotkey {} ({trigger}) not registered: {e}",
+                "wavesink: hotkey {} ({trigger}) not registered: {e}",
                 action.id()
             );
         }

@@ -21,8 +21,8 @@ export function Ms({
   );
 }
 
-/** App logo mark - stylized sink/funnel of soundwaves. */
-export function SinkMark() {
+/** Legacy vector fallback for compact windows. */
+export function WaveSinkMark() {
   return (
     <svg
       viewBox="0 0 24 24"

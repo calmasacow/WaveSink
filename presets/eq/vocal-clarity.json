@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Vocal Clarity",
-  "author": "Sink",
+  "author": "WaveSink",
   "description": "Presence lift for chat and podcasts; rumble rolled off.",
   "preamp_db": -2,
   "bands": [

@@ -194,9 +194,7 @@ fn default_true() -> bool {
 
 impl RoutingModel {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let root = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve config directory".into()))?;
-        Ok(root.join("sink").join(ROUTING_FILE))
+        Ok(crate::persistence::app_config_dir()?.join(ROUTING_FILE))
     }
 
     /// Migrate the old channel/bus topology once, keeping the old JSON files

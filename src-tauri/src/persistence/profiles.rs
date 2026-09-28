@@ -8,7 +8,7 @@ use crate::error::SinkError;
 use crate::persistence::assignments::Assignments;
 
 /// A named snapshot of the mixer: volumes/mutes, assignments, and output
-/// choices, stored as JSON in `$XDG_CONFIG_HOME/sink/profiles/<name>.json`.
+/// choices, stored as JSON in `$XDG_CONFIG_HOME/wavesink/profiles/<name>.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -41,9 +41,7 @@ pub struct ProfileInfo {
 }
 
 fn profiles_dir() -> Result<PathBuf, SinkError> {
-    let dir = crate::persistence::config_root()
-        .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-    Ok(dir.join("sink").join("profiles"))
+    Ok(crate::persistence::app_config_dir()?.join("profiles"))
 }
 
 /// Profile names become file names: restrict to a safe charset so a name

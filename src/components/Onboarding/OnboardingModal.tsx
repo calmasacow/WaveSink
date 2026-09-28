@@ -59,7 +59,7 @@ const STEPS: Step[] = [
   {
     icon: "grid_view",
     title: "Sort your apps",
-    body: "New apps appear on their own. Drop each onto a channel - game, chat, music - and Sink keeps it there next time.",
+    body: "New apps appear on their own. Drop each onto a channel - game, chat, music - and WaveSink keeps it there next time.",
   },
   {
     icon: "mic",
@@ -186,7 +186,7 @@ export function OnboardingModal() {
 
   return (
     <div className="modal-scrim">
-      <div className="modal ob-modal" role="dialog" aria-label="Welcome to Sink">
+      <div className="modal ob-modal" role="dialog" aria-label="Welcome to WaveSink">
         {body}
       </div>
     </div>

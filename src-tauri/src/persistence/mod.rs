@@ -22,14 +22,36 @@ pub fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Where Sink's own config directory lives. Release builds always resolve
-/// `$XDG_CONFIG_HOME`; the test override below does not exist in them.
+/// User config root. Release builds always resolve `$XDG_CONFIG_HOME`; the
+/// test override below does not exist in them.
 pub fn config_root() -> Option<std::path::PathBuf> {
     #[cfg(test)]
     if let Some(root) = testing::config_root_override() {
         return Some(root);
     }
     dirs::config_dir()
+}
+
+/// WaveSink's config directory. On first access, atomically move a legacy
+/// `sink` directory when no `wavesink` directory already exists.
+pub fn app_config_dir() -> Result<std::path::PathBuf, crate::error::SinkError> {
+    let root = config_root().ok_or_else(|| {
+        crate::error::SinkError::Config("cannot resolve user config directory".into())
+    })?;
+    let active = root.join("wavesink");
+    if active.try_exists()? {
+        return Ok(active);
+    }
+    let legacy = root.join("sink");
+    if legacy.try_exists()? {
+        if let Err(error) = std::fs::rename(legacy, &active) {
+            // Another startup thread may have completed the same migration.
+            if !active.try_exists()? {
+                return Err(error.into());
+            }
+        }
+    }
+    Ok(active)
 }
 
 /// Redirects [`config_root`] per thread, so a test can exercise a real save
@@ -89,7 +111,7 @@ pub mod testing {
     }
 }
 
-/// Create Sink's config directory (and parents) with owner-only access -
+/// Create WaveSink's config directory (and parents) with owner-only access -
 /// routing rules and app history are nobody else's business.
 pub fn ensure_private_dir(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(path)?;
@@ -125,14 +147,12 @@ pub fn write_atomic(path: &std::path::Path, contents: impl AsRef<[u8]>) -> std::
     result
 }
 
-/// Factory reset: delete everything Sink ever saved - the whole config
+/// Factory reset: delete everything WaveSink saved - the active config
 /// directory and the WirePlumber routing rules.
 pub fn wipe_all() -> Result<(), crate::error::SinkError> {
-    if let Some(dir) = crate::persistence::config_root() {
-        let sink_dir = dir.join("sink");
-        if sink_dir.exists() {
-            std::fs::remove_dir_all(&sink_dir)?;
-        }
+    let dir = app_config_dir()?;
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)?;
     }
     if let Ok(conf) = wireplumber::conf_path() {
         if conf.exists() {
@@ -176,5 +196,51 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn app_config_dir_migrates_complete_legacy_tree() {
+        let root = testing::TempConfig::new("migrate-config");
+        let legacy = config_root().unwrap().join("sink");
+        std::fs::create_dir_all(legacy.join("profiles")).unwrap();
+        std::fs::write(legacy.join("prefs.json"), "prefs").unwrap();
+        std::fs::write(legacy.join("profiles/gaming.json"), "profile").unwrap();
+
+        let active = app_config_dir().unwrap();
+
+        assert_eq!(active, config_root().unwrap().join("wavesink"));
+        assert!(!legacy.exists());
+        assert_eq!(
+            std::fs::read_to_string(active.join("prefs.json")).unwrap(),
+            "prefs"
+        );
+        assert_eq!(
+            std::fs::read_to_string(active.join("profiles/gaming.json")).unwrap(),
+            "profile"
+        );
+        drop(root);
+    }
+
+    #[test]
+    fn app_config_dir_prefers_wavesink_and_leaves_legacy_untouched() {
+        let root = testing::TempConfig::new("both-configs");
+        let config = config_root().unwrap();
+        let legacy = config.join("sink");
+        let active = config.join("wavesink");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::create_dir_all(&active).unwrap();
+        std::fs::write(legacy.join("state"), "legacy").unwrap();
+        std::fs::write(active.join("state"), "current").unwrap();
+
+        assert_eq!(app_config_dir().unwrap(), active);
+        assert_eq!(
+            std::fs::read_to_string(legacy.join("state")).unwrap(),
+            "legacy"
+        );
+        assert_eq!(
+            std::fs::read_to_string(active.join("state")).unwrap(),
+            "current"
+        );
+        drop(root);
     }
 }

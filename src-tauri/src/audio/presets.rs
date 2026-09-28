@@ -61,7 +61,7 @@ pub fn bundled_presets() -> Vec<EqPreset> {
         .filter_map(|(stem, raw)| match parse_bundled(stem, raw) {
             Ok(preset) => Some(preset),
             Err(e) => {
-                eprintln!("sink: skipping bundled eq {e}");
+                eprintln!("wavesink: skipping bundled eq {e}");
                 None
             }
         })

@@ -91,15 +91,15 @@ pub fn refresh_streams(state: &AppState) -> Result<Vec<AppStream>, String> {
     // The blocking work, with the lock released.
     if let Some(seen) = seen_to_save {
         if let Err(e) = seen.save() {
-            eprintln!("sink: saving app history failed: {e}");
+            eprintln!("wavesink: saving app history failed: {e}");
         }
     }
     if let Some((assignments, aliases)) = rules_to_save {
         if let Err(e) = assignments.save() {
-            eprintln!("sink: saving migrated assignments failed: {e}");
+            eprintln!("wavesink: saving migrated assignments failed: {e}");
         }
         if let Err(e) = aliases.save() {
-            eprintln!("sink: saving migrated aliases failed: {e}");
+            eprintln!("wavesink: saving migrated aliases failed: {e}");
         }
     }
     for (index, target, app_name) in planned {
@@ -110,7 +110,7 @@ pub fn refresh_streams(state: &AppState) -> Result<Vec<AppStream>, String> {
                     s.assigned_sink = Some(target);
                 }
             }
-            Err(e) => eprintln!("sink: auto-route of {app_name} (#{index}) failed: {e}"),
+            Err(e) => eprintln!("wavesink: auto-route of {app_name} (#{index}) failed: {e}"),
         }
     }
 
@@ -381,7 +381,7 @@ pub fn init_virtual_devices(
         )
     };
     if let Err(e) = buses.save() {
-        eprintln!("sink: saving mixes failed: {e}");
+        eprintln!("wavesink: saving mixes failed: {e}");
     }
 
     // Wire every channel to its saved output (or the system default) so
@@ -391,19 +391,19 @@ pub fn init_virtual_devices(
             .backend
             .set_channel_output(&def.name, outputs.get(&def.name))
         {
-            eprintln!("sink: output routing for {} failed: {e}", def.name);
+            eprintln!("wavesink: output routing for {} failed: {e}", def.name);
         }
         // Restore per-channel failover (default on, so only push the ones off).
         if !outputs.failover(&def.name) {
             if let Err(e) = state.backend.set_channel_failover(&def.name, false) {
-                eprintln!("sink: failover setting for {} failed: {e}", def.name);
+                eprintln!("wavesink: failover setting for {} failed: {e}", def.name);
             }
         }
         // Restore saved EQ (only channels that were ever configured; the
         // loop builds the insert when the sink node appears).
         if let Some(config) = eq.configs.get(&def.name) {
             if let Err(e) = state.backend.set_channel_eq(&def.name, config) {
-                eprintln!("sink: eq restore for {} failed: {e}", def.name);
+                eprintln!("wavesink: eq restore for {} failed: {e}", def.name);
             }
         }
     }
@@ -415,18 +415,18 @@ pub fn init_virtual_devices(
             .backend
             .create_bus(&bus.name, &prefs.decorate(&bus.label), bus.role)
         {
-            eprintln!("sink: creating mix {} failed: {e}", bus.name);
+            eprintln!("wavesink: creating mix {} failed: {e}", bus.name);
             continue;
         }
         if let Err(e) = state
             .backend
             .set_bus_members(&bus.name, &bus.effective_members(&names))
         {
-            eprintln!("sink: members for mix {} failed: {e}", bus.name);
+            eprintln!("wavesink: members for mix {} failed: {e}", bus.name);
         }
         if bus.mic {
             if let Err(e) = state.backend.set_bus_mic(&bus.name, true) {
-                eprintln!("sink: mic membership for mix {} failed: {e}", bus.name);
+                eprintln!("wavesink: mic membership for mix {} failed: {e}", bus.name);
             }
         }
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
@@ -434,7 +434,7 @@ pub fn init_virtual_devices(
     }
     for (mix, bindings) in mix_outputs {
         if let Err(e) = state.backend.set_mix_outputs(&mix, &bindings) {
-            eprintln!("sink: output routing for mix {mix} failed: {e}");
+            eprintln!("wavesink: output routing for mix {mix} failed: {e}");
         }
     }
     for input in &hardware_inputs {
@@ -444,7 +444,7 @@ pub fn init_virtual_devices(
             input.volume_percent,
             input.muted,
         ) {
-            eprintln!("sink: hardware input {} failed: {e}", input.id);
+            eprintln!("wavesink: hardware input {} failed: {e}", input.id);
         }
     }
 
@@ -453,7 +453,7 @@ pub fn init_virtual_devices(
         let mut applied = mic.clone();
         applied.output_label = prefs.decorate(&mic.output_label);
         if let Err(e) = state.backend.set_mic_config(&applied) {
-            eprintln!("sink: mic chain init failed: {e}");
+            eprintln!("wavesink: mic chain init failed: {e}");
             // Keep the UI honest: no chain is running, don't show the mic as
             // enabled. In-memory only - the on-disk config restores it later.
             if let Ok(mut mixer) = state.lock_mixer() {
@@ -482,7 +482,7 @@ pub fn init_virtual_devices(
                 mixer.active_trigger = None; // the Default profile has no trigger
                 let _ = crate::persistence::active::save(Some(&default.name));
             }
-            Err(e) => eprintln!("sink: creating Default profile failed: {e}"),
+            Err(e) => eprintln!("wavesink: creating Default profile failed: {e}"),
         }
     }
     // Profiles/active state may have changed since the tray was built.

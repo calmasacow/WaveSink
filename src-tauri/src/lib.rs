@@ -31,7 +31,9 @@ pub fn run() {
                 (Arc::new(backend), Some(levels))
             }
             Err(e) => {
-                eprintln!("sink: native PipeWire backend unavailable ({e}); using pactl fallback");
+                eprintln!(
+                    "wavesink: native PipeWire backend unavailable ({e}); using pactl fallback"
+                );
                 (Arc::new(PactlBackend::new()), None)
             }
         };
@@ -143,6 +145,9 @@ pub fn run() {
             commands::hotkeys::set_balance_step,
         ])
         .setup(move |app| {
+            if let Err(error) = persistence::autostart::migrate_legacy_unit() {
+                eprintln!("wavesink: autostart migration failed: {error}");
+            }
             build_tray(app)?;
             hotkeys::start(app.handle().clone());
             // The window starts hidden (config) to avoid a flash; show it
@@ -169,14 +174,14 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 if let Err(e) = window.hide() {
-                    eprintln!("sink: failed to hide window: {e}");
+                    eprintln!("wavesink: failed to hide window: {e}");
                 }
             }
         })
         .run(tauri::generate_context!());
 
     if let Err(e) = result {
-        eprintln!("sink: fatal error while running tauri application: {e}");
+        eprintln!("wavesink: fatal error while running tauri application: {e}");
         std::process::exit(1);
     }
 }
@@ -221,7 +226,7 @@ fn spawn_route_enforcer(handle: tauri::AppHandle) {
                 Err(e) => {
                     failures = failures.saturating_add(1);
                     if last_error.as_deref() != Some(e.as_str()) {
-                        eprintln!("sink: auto-route enforcement failed: {e}");
+                        eprintln!("wavesink: auto-route enforcement failed: {e}");
                         last_error = Some(e);
                     }
                 }
@@ -312,10 +317,10 @@ pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
         match build_tray_menu(app) {
             Ok(menu) => {
                 if let Err(e) = tray.set_menu(Some(menu)) {
-                    eprintln!("sink: tray menu refresh failed: {e}");
+                    eprintln!("wavesink: tray menu refresh failed: {e}");
                 }
             }
-            Err(e) => eprintln!("sink: tray menu rebuild failed: {e}"),
+            Err(e) => eprintln!("wavesink: tray menu rebuild failed: {e}"),
         }
     }
 }
@@ -338,7 +343,7 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     Ok(()) => {
                         let _ = app.emit("profile-changed", name);
                     }
-                    Err(e) => eprintln!("sink: tray profile switch failed: {e}"),
+                    Err(e) => eprintln!("wavesink: tray profile switch failed: {e}"),
                 }
                 return;
             }
@@ -354,7 +359,7 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     // log failures but never block quitting.
                     let state = app.state::<AppState>();
                     for err in state.teardown_virtual_sinks() {
-                        eprintln!("sink: teardown: {err}");
+                        eprintln!("wavesink: teardown: {err}");
                     }
                     app.exit(0);
                 }

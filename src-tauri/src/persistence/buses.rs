@@ -84,7 +84,7 @@ impl BusDef {
     }
 }
 
-/// The user's mixes, stored at `$XDG_CONFIG_HOME/sink/buses.json`.
+/// The user's mixes, stored at `$XDG_CONFIG_HOME/wavesink/buses.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Buses {
     pub buses: Vec<BusDef>,
@@ -129,9 +129,7 @@ fn slugify(label: &str) -> String {
 
 impl Buses {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("buses.json"))
+        Ok(crate::persistence::app_config_dir()?.join("buses.json"))
     }
 
     /// Load from disk. Old automatic Master Mix definitions are deliberately
@@ -148,7 +146,7 @@ impl Buses {
                 let mut buses = match serde_json::from_str::<Self>(&raw) {
                     Ok(buses) => buses,
                     Err(e) => {
-                        eprintln!("sink: buses.json is unreadable ({e}); using defaults");
+                        eprintln!("wavesink: buses.json is unreadable ({e}); using defaults");
                         Self::default()
                     }
                 };

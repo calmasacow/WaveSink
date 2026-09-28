@@ -22,7 +22,7 @@ pub fn autosave_active(mixer: &crate::mixer::state::MixerState) {
         routing: mixer.routing.clone(),
     };
     if let Err(e) = profiles::save(&profile) {
-        eprintln!("sink: autosave of profile {name} failed: {e}");
+        eprintln!("wavesink: autosave of profile {name} failed: {e}");
     }
 }
 
@@ -124,7 +124,7 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                 }
             }
             if let Err(e) = state.backend.destroy_virtual_sink(&old.name) {
-                eprintln!("sink: removing {} for profile failed: {e}", old.name);
+                eprintln!("wavesink: removing {} for profile failed: {e}", old.name);
             }
         }
     }
@@ -144,13 +144,16 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
             .backend
             .set_channel_output(&channel.name, profile.outputs.get(&channel.name))
         {
-            eprintln!("sink: profile output for {} failed: {e}", channel.name);
+            eprintln!("wavesink: profile output for {} failed: {e}", channel.name);
         }
         if let Err(e) = state
             .backend
             .set_channel_failover(&channel.name, profile.outputs.failover(&channel.name))
         {
-            eprintln!("sink: profile failover for {} failed: {e}", channel.name);
+            eprintln!(
+                "wavesink: profile failover for {} failed: {e}",
+                channel.name
+            );
         }
         // EQ: non-fatal like output/failover - one channel's insert failing
         // must not abort the whole profile load.
@@ -158,7 +161,7 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
             .backend
             .set_channel_eq(&channel.name, &profile.eq.get(&channel.name))
         {
-            eprintln!("sink: profile eq for {} failed: {e}", channel.name);
+            eprintln!("wavesink: profile eq for {} failed: {e}", channel.name);
         }
     }
 
@@ -179,7 +182,10 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
     for old in &current_buses.buses {
         if target_buses.get(&old.name).is_none() {
             if let Err(e) = state.backend.destroy_bus(&old.name) {
-                eprintln!("sink: removing mix {} for profile failed: {e}", old.name);
+                eprintln!(
+                    "wavesink: removing mix {} for profile failed: {e}",
+                    old.name
+                );
             }
         }
     }
@@ -189,7 +195,10 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         let live_role = current_buses.get(&bus.name).map(|b| b.role);
         if live_role.is_some_and(|role| role != bus.role) {
             if let Err(e) = state.backend.destroy_bus(&bus.name) {
-                eprintln!("sink: rebuilding mix {} for profile failed: {e}", bus.name);
+                eprintln!(
+                    "wavesink: rebuilding mix {} for profile failed: {e}",
+                    bus.name
+                );
             }
         }
         if live_role != Some(bus.role) {
@@ -198,7 +207,7 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                     .backend
                     .create_bus(&bus.name, &prefs.decorate(&bus.label), bus.role)
             {
-                eprintln!("sink: profile mix {} failed: {e}", bus.name);
+                eprintln!("wavesink: profile mix {} failed: {e}", bus.name);
                 continue;
             }
         }
@@ -206,11 +215,11 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
             .backend
             .set_bus_members(&bus.name, &bus.effective_members(&names))
         {
-            eprintln!("sink: profile members for mix {} failed: {e}", bus.name);
+            eprintln!("wavesink: profile members for mix {} failed: {e}", bus.name);
         }
         if let Err(e) = state.backend.set_bus_mic(&bus.name, bus.mic) {
             eprintln!(
-                "sink: profile mic membership for mix {} failed: {e}",
+                "wavesink: profile mic membership for mix {} failed: {e}",
                 bus.name
             );
         }
@@ -221,7 +230,10 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                 .backend
                 .set_mix_outputs(&bus.name, &mix.output_bindings)
             {
-                eprintln!("sink: profile output routing for {} failed: {e}", bus.name);
+                eprintln!(
+                    "wavesink: profile output routing for {} failed: {e}",
+                    bus.name
+                );
             }
         }
     }

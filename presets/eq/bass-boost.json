@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Bass Boost",
-  "author": "Sink",
+  "author": "WaveSink",
   "description": "Warm low-end lift for music, with headroom trimmed to match.",
   "preamp_db": -4,
   "bands": [

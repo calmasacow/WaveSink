@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Sink
+Name=WaveSink
 Comment=Linux-native audio routing and mixing for PipeWire
-Exec=sink
-Icon=sink
+Exec=wavesink
+Icon=wavesink
 NoDisplay=true

@@ -81,7 +81,7 @@ impl MockBackend {
             .collect()
     }
 
-    /// Simulate something outside Sink moving a stream (pavucontrol, or the
+    /// Simulate something outside WaveSink moving a stream (pavucontrol, or the
     /// user dragging it in another mixer).
     pub fn set_assigned(&self, index: u32, sink: Option<&str>) {
         for s in self.streams.lock().expect("streams").iter_mut() {

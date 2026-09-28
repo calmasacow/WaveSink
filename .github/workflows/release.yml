@@ -49,7 +49,7 @@ jobs:
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.9.1
         with:
           workspaces: .
-          shared-key: sink
+          shared-key: wavesink
 
       - name: Install system dependencies
         env:
@@ -144,12 +144,26 @@ jobs:
       - name: Build bundles
         run: npm run tauri build
 
+      - name: Verify package identity
+        run: |
+          set -euo pipefail
+          deb=$(find target/release/bundle/deb -name 'wavesink_*_amd64.deb' -print -quit)
+          [ -n "$deb" ]
+          [ "$(dpkg-deb -f "$deb" Package)" = wavesink ]
+          [ "$(dpkg-deb -f "$deb" Provides)" = sink ]
+          [ "$(dpkg-deb -f "$deb" Conflicts)" = sink ]
+          [ "$(dpkg-deb -f "$deb" Replaces)" = sink ]
+          dpkg-deb -c "$deb" > /tmp/wavesink-deb-contents
+          grep -q '/usr/bin/wavesink$' /tmp/wavesink-deb-contents
+          ! grep -q '/usr/bin/sink$' /tmp/wavesink-deb-contents
+          ! grep -q '/sink\.desktop$' /tmp/wavesink-deb-contents
+
       - name: Repack AppImage against system PipeWire
         # Strip the bundled libpipewire so the loader uses the system one.
         run: |
           set -euo pipefail
-          cd "$(dirname "$(find target -path '*/release/bundle/appimage/sink_*.AppImage' | head -1)")"
-          app=$(ls sink_*.AppImage)
+          cd "$(dirname "$(find target -path '*/release/bundle/appimage/wavesink_*.AppImage' | head -1)")"
+          app=$(ls wavesink_*.AppImage)
           ./"$app" --appimage-extract > /dev/null
           rm -fv squashfs-root/usr/lib/libpipewire-0.3.so*
           offset=$(./"$app" --appimage-offset)
@@ -162,7 +176,7 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            target/release/bundle/appimage/sink_*.AppImage
+            target/release/bundle/appimage/wavesink_*.AppImage
             target/release/bundle/deb/*.deb
             target/release/bundle/rpm/*.rpm
 
@@ -189,18 +203,18 @@ jobs:
           Every file above is checksummed in \`SHA256SUMS\` and carries a build
           provenance attestation, so you can check where it came from:
           \`\`\`
-          gh attestation verify sink_${{ steps.ver.outputs.version }}_amd64.deb --owner calmasacow
+          gh attestation verify wavesink_${{ steps.ver.outputs.version }}_amd64.deb --owner calmasacow
           \`\`\`"
           fi
           # Checksums by basename so users can verify downloads; the archpkg job
           # appends its own line.
           ( cd target/release/bundle
-            sha256sum appimage/sink_*.AppImage deb/*.deb rpm/*.rpm \
+            sha256sum appimage/wavesink_*.AppImage deb/*.deb rpm/*.rpm \
               | awk '{ n=$2; sub(/.*\//, "", n); print $1"  "n }' \
               > "$GITHUB_WORKSPACE/SHA256SUMS" )
           gh release upload "$tag" --clobber \
             "$GITHUB_WORKSPACE/SHA256SUMS" \
-            target/release/bundle/appimage/sink_*.AppImage \
+            target/release/bundle/appimage/wavesink_*.AppImage \
             target/release/bundle/deb/*.deb \
             target/release/bundle/rpm/*.rpm
 
@@ -220,7 +234,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Build and attach sink-bin
+      - name: Build and attach wavesink-bin
         id: pkg
         env:
           VER: ${{ needs.build.outputs.version }}
@@ -230,14 +244,14 @@ jobs:
           set -euo pipefail
           useradd -m builder
           install -d -o builder /build
-          deb="sink_${VER}_amd64.deb"
+          deb="wavesink_${VER}_amd64.deb"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$deb" --dir /build
           sum=$(sha256sum "/build/$deb" | cut -d' ' -f1)
           cp packaging/arch/PKGBUILD /build/PKGBUILD
           sed -i "s/^pkgver=.*/pkgver=${VER}/; s/^sha256sums=.*/sha256sums=('${sum}')/" /build/PKGBUILD
           chown -R builder:builder /build
           sudo -u builder bash -lc 'cd /build && makepkg --noconfirm --nodeps'
-          pkg=$(ls /build/sink-bin-*-x86_64.pkg.tar.zst)
+          pkg=$(ls /build/wavesink-bin-*-x86_64.pkg.tar.zst)
           # Same gate the pull-request install tests use: nothing publishes
           # unless the packaged binary launches and stays up.
           pacman -U --noconfirm "$pkg" >/dev/null

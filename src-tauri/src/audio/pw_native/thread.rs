@@ -458,7 +458,7 @@ fn setup_and_run(
                 };
                 match heal {
                     Heal::Recreate(name, label, kind) => {
-                        eprintln!("sink: {name} vanished externally - recreating");
+                        eprintln!("wavesink: {name} vanished externally - recreating");
                         if let Some(core) = CORE.with(|c| c.borrow().clone()) {
                             match create_node_object(&core, &name, &label, kind) {
                                 Ok(proxy) => {
@@ -473,7 +473,7 @@ fn setup_and_run(
                                         NodeKind::Mic => s.mic_source = Some(proxy),
                                     }
                                 }
-                                Err(e) => eprintln!("sink: recreate {name} failed: {e}"),
+                                Err(e) => eprintln!("wavesink: recreate {name} failed: {e}"),
                             }
                         }
                         ensure_all_links(&state);
@@ -771,7 +771,7 @@ fn on_node(
                 Ok(meter) => {
                     s.meters.insert(node_name.clone(), meter);
                 }
-                Err(e) => eprintln!("sink: meter for {node_name} failed: {e}"),
+                Err(e) => eprintln!("wavesink: meter for {node_name} failed: {e}"),
             }
         }
         // An enabled EQ config with no live insert: build it against the fresh
@@ -782,7 +782,7 @@ fn on_node(
                     Ok(handle) => {
                         s.eq_streams.insert(node_name.clone(), handle);
                     }
-                    Err(e) => eprintln!("sink: eq chain for {node_name} failed: {e}"),
+                    Err(e) => eprintln!("wavesink: eq chain for {node_name} failed: {e}"),
                 }
             }
         }
@@ -808,7 +808,7 @@ fn on_node(
                 Ok(meter) => {
                     s.meters.insert(node_name.clone(), meter);
                 }
-                Err(e) => eprintln!("sink: bus meter for {node_name} failed: {e}"),
+                Err(e) => eprintln!("wavesink: bus meter for {node_name} failed: {e}"),
             }
         }
         drop(s);
@@ -860,7 +860,7 @@ fn build_mic_streams(state: &Rc<RefCell<State>>) {
             .values()
             .any(|n| n.props.get("node.name") == Some(pinned) && is_capture_class(&n.media_class))
         {
-            eprintln!("sink: mic chain waiting for {pinned}");
+            eprintln!("wavesink: mic chain waiting for {pinned}");
             return;
         }
     }
@@ -879,7 +879,7 @@ fn build_mic_streams(state: &Rc<RefCell<State>>) {
             s.mic_links.clear();
             s.mic_streams = Some(streams);
         }
-        Err(e) => eprintln!("sink: mic chain failed: {e}"),
+        Err(e) => eprintln!("wavesink: mic chain failed: {e}"),
     }
     drop(s);
     ensure_mic_links(state);
@@ -1016,7 +1016,7 @@ fn create_links(
             },
         ) {
             Ok(link) => created.push((*monitor_port, *input_port, link)),
-            Err(e) => eprintln!("sink: link {sink_name} failed: {e}"),
+            Err(e) => eprintln!("wavesink: link {sink_name} failed: {e}"),
         }
     }
     created
@@ -1097,7 +1097,7 @@ fn reconcile_bus_member(
                 s.send_gains.insert(key.clone(), handle);
             }
             Err(e) => {
-                eprintln!("sink: send gain for {member} in {bus_name} failed: {e}");
+                eprintln!("wavesink: send gain for {member} in {bus_name} failed: {e}");
                 s.send_gain_failed.insert(key);
                 return;
             }
@@ -1430,7 +1430,7 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
     s.eq_desired_targets = eq_targets;
 }
 
-/// A node Sink creates and keeps alive. Mixes are capture-only sources.
+/// A node WaveSink creates and keeps alive. Mixes are capture-only sources.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeKind {
     Channel,
@@ -1909,7 +1909,7 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                         }
                     }
                 }
-                // Sink not live yet (e.g. mid-profile-load): the on_node
+                // WaveSink not live yet (e.g. mid-profile-load): the on_node
                 // hook builds the chain from eq_configs when it appears.
             }
             // Re-source the channel's links from/to the insert.

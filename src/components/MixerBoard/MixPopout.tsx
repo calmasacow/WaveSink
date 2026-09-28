@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMixerStore } from "../../store/mixer";
 import { busMembers, MIC_LEVEL_KEY } from "../../types";
-import { channelIcon, Ms, SinkMark } from "../Icons";
+import { channelIcon, Ms, WaveSinkMark } from "../Icons";
 import { SendRow } from "./SendRow";
 
 const POLL_INTERVAL_MS = 2000;
@@ -49,10 +49,10 @@ export function MixPopout({ busName }: Readonly<{ busName: string }>) {
       <header data-tauri-drag-region className="headerbar">
         <div data-tauri-drag-region className="hb-brand">
           <div className="hb-logo">
-            <SinkMark />
+            <WaveSinkMark />
           </div>
           <div data-tauri-drag-region className="hb-title">
-            Sink
+            WaveSink
           </div>
         </div>
         <div data-tauri-drag-region className="hb-sub">

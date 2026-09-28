@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Any sink node Sink itself created: a channel, service node, or a mix -
+/// Any audio sink node WaveSink created: a channel, service node, or a mix.
+/// `sink_*` names are stable external protocol IDs kept for app integrations.
 /// sending a channel into a mix that already receives it would loop it back.
 pub fn is_own_sink(name: &str) -> bool {
     name.starts_with("sink_")
@@ -348,7 +349,7 @@ pub struct OutputDevice {
 }
 
 fn default_mic_label() -> String {
-    "Sink Mic".to_string()
+    "WaveSink Mic".to_string()
 }
 fn default_gate_threshold() -> f32 {
     -40.0

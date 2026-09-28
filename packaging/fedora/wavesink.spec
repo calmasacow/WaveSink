@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
-Name:           sink
-Version:        0.1.19
+Name:           wavesink
+Version:        0.9.1
 Release:        1%{?dist}
 Summary:        SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire
 
@@ -9,9 +9,13 @@ License:        GPL-3.0-only
 URL:            https://github.com/calmasacow/WaveSink
 # Repackaged rather than built from source: a Tauri build needs network for
 # npm/cargo, which a COPR/mock buildroot does not have.
-Source0:        https://github.com/calmasacow/WaveSink/releases/download/v%{version}/sink_%{version}_amd64.deb
+Source0:        https://github.com/calmasacow/WaveSink/releases/download/v%{version}/wavesink_%{version}_amd64.deb
 
 ExclusiveArch:  x86_64
+
+Provides:       sink = %{version}-%{release}
+Conflicts:      sink
+Obsoletes:      sink
 
 BuildRequires:  binutils
 BuildRequires:  tar
@@ -26,7 +30,7 @@ Requires:       hicolor-icon-theme
 Requires:       libayatana-appindicator3.so.1()(64bit)
 
 %description
-Sink is a Linux-native audio routing and mixing app built on PipeWire, in the
+WaveSink is a Linux-native audio routing and mixing app built on PipeWire, in the
 spirit of SteelSeries Sonar or Voicemeeter. Create named virtual channels
 (Game, Chat, Music, System), assign application audio streams to them, control
 volume and mute per channel, and route a processed virtual microphone.
@@ -49,11 +53,11 @@ mkdir -p %{buildroot}%{_prefix}
 cp -a usr/. %{buildroot}%{_prefix}/
 
 %files
-%{_bindir}/sink
-%{_datadir}/applications/sink.desktop
+%{_bindir}/wavesink
+%{_datadir}/applications/wavesink.desktop
 # Hidden entry the desktop portal files the global shortcuts under.
-%{_datadir}/applications/us.echo.Sink.desktop
-%{_datadir}/icons/hicolor/*/apps/sink.png
+%{_datadir}/applications/us.echo.WaveSink.desktop
+%{_datadir}/icons/hicolor/*/apps/wavesink.png
 
 %changelog
 * Wed Jul 15 2026 NC1107 <nickpconn@gmail.com> - 0.1.19-1

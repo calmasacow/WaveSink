@@ -38,7 +38,7 @@ routing, levels, and visual identity.
   recording list short; it stays capturable through its monitor.
 - **Independent destinations** - Personal, Stream, Chat, and custom mixes
   keep separate balances. Monitor selection changes what you hear without
-  rewriting app assignments; every mix is capturable as `Sink: <name>`.
+  rewriting app assignments; every mix is capturable as `WaveSink: <name>`.
 - **Equalizer** - per-input parametric EQ (up to 10 bands) with a
   draggable response curve, bundled community presets, and import/export
   including AutoEq text blocks
@@ -61,19 +61,19 @@ COPR.
 **Fedora / openSUSE**
 
 ```bash
-sudo dnf install ./sink-*.x86_64.rpm
+sudo dnf install ./wavesink-*.x86_64.rpm
 ```
 
 **Debian / Ubuntu / Mint**
 
 ```bash
-sudo apt install ./sink_*_amd64.deb
+sudo apt install ./wavesink_*_amd64.deb
 ```
 
 **Arch / Manjaro / EndeavourOS**
 
 ```bash
-sudo pacman -U ./sink-bin-*-x86_64.pkg.tar.zst
+sudo pacman -U ./wavesink-bin-*-x86_64.pkg.tar.zst
 ```
 
 These install the app properly - launcher entry, icon, uninstall
@@ -82,8 +82,8 @@ through your package manager.
 **Any other distro - AppImage (portable, no root)**
 
 ```bash
-chmod +x sink_*_amd64.AppImage
-./sink_*_amd64.AppImage
+chmod +x wavesink_*_amd64.AppImage
+./wavesink_*_amd64.AppImage
 ```
 
 To get a launcher entry for an AppImage, use
@@ -101,7 +101,8 @@ npm run tauri dev      # run
 npm run tauri build    # package
 ```
 
-Config lives in `~/.config/sink` as plain JSON.
+Config lives in `~/.config/wavesink` as plain JSON. Existing `~/.config/sink`
+state moves there automatically on first launch.
 
 The routing contract is documented in [docs/routing-model.md](docs/routing-model.md).
 On first launch after upgrading, old JSON files are backed up beside the new

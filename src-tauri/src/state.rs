@@ -96,7 +96,7 @@ impl AppState {
         };
         if mixer.prune_stale_apps(now) {
             if let Err(e) = mixer.seen.save() {
-                eprintln!("sink: pruning app history failed: {e}");
+                eprintln!("wavesink: pruning app history failed: {e}");
             }
         }
         Self {

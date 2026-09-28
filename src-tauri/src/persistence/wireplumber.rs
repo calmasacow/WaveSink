@@ -30,11 +30,14 @@ fn remove_stale_at(path: &Path) {
         return;
     };
     if !raw.starts_with(GENERATED_HEADER) {
-        eprintln!("sink: leaving {} alone: not one of ours", path.display());
+        eprintln!(
+            "wavesink: leaving {} alone: not one of ours",
+            path.display()
+        );
         return;
     }
     if let Err(e) = std::fs::remove_file(path) {
-        eprintln!("sink: removing stale {}: {e}", path.display());
+        eprintln!("wavesink: removing stale {}: {e}", path.display());
     }
 }
 

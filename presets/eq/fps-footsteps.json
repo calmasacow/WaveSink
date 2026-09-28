@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "FPS Footsteps",
-  "author": "Sink",
+  "author": "WaveSink",
   "description": "Boosts the footstep band and tames explosions and rumble.",
   "preamp_db": -3,
   "bands": [

@@ -1,5 +1,4 @@
-# Maintainer: NC1107 <nickpconn@gmail.com>
-pkgname=sink-bin
+pkgname=wavesink-bin
 pkgver=0.0.0
 pkgrel=1
 pkgdesc="SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire"
@@ -11,17 +10,18 @@ license=('GPL-3.0-only')
 depends=('glibc' 'libgcc' 'glib2' 'gtk3' 'gdk-pixbuf2' 'cairo' 'dbus'
          'webkit2gtk-4.1' 'libsoup3' 'libpipewire' 'pipewire-pulse'
          'wireplumber' 'hicolor-icon-theme' 'libayatana-appindicator')
-provides=('sink')
-conflicts=('sink')
+provides=('wavesink' 'sink')
+conflicts=('wavesink' 'sink' 'sink-bin')
+replaces=('sink-bin')
 options=('!strip' '!debug')
-source=("https://github.com/calmasacow/WaveSink/releases/download/v${pkgver}/sink_${pkgver}_amd64.deb")
-noextract=("sink_${pkgver}_amd64.deb")
+source=("https://github.com/calmasacow/WaveSink/releases/download/v${pkgver}/wavesink_${pkgver}_amd64.deb")
+noextract=("wavesink_${pkgver}_amd64.deb")
 sha256sums=('SKIP')
 
 package() {
   cd "${srcdir}"
   # The release .deb already ships the FHS layout; unpack its payload
   # straight into the package root.
-  bsdtar -xf "sink_${pkgver}_amd64.deb"
+  bsdtar -xf "wavesink_${pkgver}_amd64.deb"
   bsdtar -xf data.tar.* -C "${pkgdir}"
 }

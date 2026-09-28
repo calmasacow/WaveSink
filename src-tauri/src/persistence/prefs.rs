@@ -18,7 +18,7 @@ pub enum DeviceLabelStyle {
     Prefix,
 }
 
-/// App preferences, stored at `$XDG_CONFIG_HOME/sink/prefs.json`.
+/// App preferences, stored at `$XDG_CONFIG_HOME/wavesink/prefs.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Prefs {
     #[serde(default)]
@@ -60,9 +60,7 @@ impl Default for Prefs {
 
 impl Prefs {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("prefs.json"))
+        Ok(crate::persistence::app_config_dir()?.join("prefs.json"))
     }
 
     pub fn load() -> Self {
@@ -78,7 +76,7 @@ impl Prefs {
     /// than blocking launch.
     fn parse(raw: &str) -> Self {
         serde_json::from_str(raw).unwrap_or_else(|e| {
-            eprintln!("sink: ignoring malformed prefs: {e}");
+            eprintln!("wavesink: ignoring malformed prefs: {e}");
             Self::default()
         })
     }
@@ -94,7 +92,7 @@ impl Prefs {
         Ok(())
     }
 
-    /// Every Sink-owned PipeWire node carries this suffix so system device
+    /// Every WaveSink-owned PipeWire node carries this suffix so system device
     /// pickers clearly distinguish virtual channels from physical hardware.
     pub fn decorate(&self, label: &str) -> String {
         format!("{label} (WaveSink)")

@@ -25,13 +25,13 @@ npm run tauri dev
 Then verify:
 
 1. Start a game, Discord, browser, and Spotify. Assign each app to a software
-   input and restart Sink; assignments must persist.
+   input and restart WaveSink; assignments must persist.
 2. Set different Personal and Stream sends. Move the Personal source fader;
    both destinations should change proportionally, but changing a cell send
    must affect only its destination.
 3. Select Personal as the monitor, then Stream. The listened mix must change
    without changing app assignments.
-4. Select `Sink: Stream` in OBS and `Sink: Chat` in Discord. Neither should
+4. Select `WaveSink: Stream` in OBS and `WaveSink: Chat` in Discord. Neither should
    require Desktop Audio.
 5. Mute Music on Stream and confirm it remains audible in Personal.
 6. Add a new app/input and confirm Chat does not receive it automatically.
@@ -46,7 +46,7 @@ Useful inspection commands:
 
 ```bash
 wpctl status
-pw-dump > /tmp/sink-pw-dump.json
+pw-dump > /tmp/wavesink-pw-dump.json
 pw-link -l
 ```
 

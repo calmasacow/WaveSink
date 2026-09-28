@@ -1,4 +1,4 @@
-# Sink Wave Link redesign — OpenCode handoff
+# WaveSink Wave Link redesign — OpenCode handoff
 
 This repository is mid-redesign from a Sonar-style channel mixer to a
 Wave-Link-style input × mix matrix. The current branch contains the first
@@ -37,7 +37,7 @@ machine has Rust 1.98.1 installed through rustup.
 - `RouteCell`: independent `enabled`, `send_percent`, and `muted` state
 - `RoutingModel`: ordered inputs/mixes, route map, monitor mix, hidden devices
 
-The model is loaded from `~/.config/sink/routing.json`. On first migration it
+The model is loaded from `~/.config/wavesink/routing.json`. On first migration it
 copies the legacy JSON files into a timestamped
 `routing-migration-backup-*` directory. Legacy `channels.json`, `buses.json`,
 `outputs.json`, `mic.json`, and `eq.json` remain intact.

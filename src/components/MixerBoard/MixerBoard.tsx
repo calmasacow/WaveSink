@@ -126,7 +126,7 @@ export function MixerBoard() {
                 icon="mic"
                 label="Capture"
                 count="1"
-                hint="Your processed mic - apps capture it as Sink Mic"
+                hint="Your processed mic - apps capture it as WaveSink Mic"
               >
                 <MicStrip />
               </MixGroup>

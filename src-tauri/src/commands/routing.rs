@@ -77,7 +77,7 @@ pub fn route_app(state: &AppState, stream_index: u32, sink_name: &str) -> Result
     for sibling in &siblings {
         if let Err(e) = state.backend.move_stream_to_sink(sibling.index, sink_name) {
             eprintln!(
-                "sink: moving {} (#{}) failed: {e}",
+                "wavesink: moving {} (#{}) failed: {e}",
                 stream.app_name, sibling.index
             );
         }

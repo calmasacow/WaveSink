@@ -5,11 +5,9 @@ use crate::audio::types::MicConfig;
 use crate::error::SinkError;
 
 /// Mic chain configuration, stored as JSON at
-/// `$XDG_CONFIG_HOME/sink/mic.json`.
+/// `$XDG_CONFIG_HOME/wavesink/mic.json`.
 pub fn config_path() -> Result<PathBuf, SinkError> {
-    let dir = crate::persistence::config_root()
-        .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-    Ok(dir.join("sink").join("mic.json"))
+    Ok(crate::persistence::app_config_dir()?.join("mic.json"))
 }
 
 pub fn load() -> MicConfig {
@@ -18,7 +16,7 @@ pub fn load() -> MicConfig {
     };
     match fs::read_to_string(&path) {
         Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-            eprintln!("sink: ignoring malformed {}: {e}", path.display());
+            eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
             MicConfig::default()
         }),
         Err(_) => MicConfig::default(),

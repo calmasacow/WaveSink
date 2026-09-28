@@ -59,7 +59,7 @@ pub fn add_channel(
         let members = bus.effective_members(&names);
         if members.contains(&names[names.len() - 1]) {
             if let Err(e) = state.backend.set_bus_members(&bus.name, &members) {
-                eprintln!("sink: membership for mix {} failed: {e}", bus.name);
+                eprintln!("wavesink: membership for mix {} failed: {e}", bus.name);
             }
         }
     }
@@ -180,7 +180,7 @@ pub fn remove_channel(state: State<'_, AppState>, sink_name: String) -> Result<(
         for stream in streams {
             if stream.assigned_sink.as_deref() == Some(sink_name.as_str()) {
                 if let Err(e) = state.backend.move_stream_to_sink(stream.index, "") {
-                    eprintln!("sink: evacuating {} failed: {e}", stream.app_name);
+                    eprintln!("wavesink: evacuating {} failed: {e}", stream.app_name);
                 }
             }
         }

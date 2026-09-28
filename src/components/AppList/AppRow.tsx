@@ -88,7 +88,7 @@ export function AppRow({ streams, total }: Readonly<AppRowProps>) {
               reveal
               size={14}
               icon="visibility_off"
-              title="Ignore - hide this app from Sink"
+              title="Ignore - hide this app from WaveSink"
               label={`Ignore ${displayName}`}
               onClick={() => void setAppIgnored(stream, true)}
             />

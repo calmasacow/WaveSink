@@ -184,7 +184,7 @@ pub fn set_onboarded(state: State<'_, AppState>) -> Result<(), String> {
 pub fn reset_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     // Best-effort teardown - the relaunch recreates everything anyway.
     for err in state.teardown_virtual_sinks() {
-        eprintln!("sink: reset teardown: {err}");
+        eprintln!("wavesink: reset teardown: {err}");
     }
     let _ = autostart::disable();
     crate::persistence::wipe_all().map_err(|e| e.to_string())?;

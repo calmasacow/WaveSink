@@ -177,13 +177,13 @@ pub fn start(app: AppHandle) {
                     set_backend(&app, Backend::Portal(handle.clone()));
                     portal::run(handle, &app).await;
                     set_backend(&app, Backend::None);
-                    eprintln!("sink: hotkey portal session ended; reconnecting");
+                    eprintln!("wavesink: hotkey portal session ended; reconnecting");
                 }
                 Err(e) if first => {
                     set_backend(&app, fallback(&config, &app, &e));
                     return;
                 }
-                Err(e) => eprintln!("sink: hotkey portal reconnect failed: {e}"),
+                Err(e) => eprintln!("wavesink: hotkey portal reconnect failed: {e}"),
             }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
@@ -201,18 +201,18 @@ fn fallback(config: &HotkeyConfig, app: &AppHandle, portal_err: &str) -> Backend
     match x11.then(|| x11::connect(config, app.clone())) {
         Some(Ok(handle)) => Backend::X11(Arc::new(handle)),
         Some(Err(e)) => {
-            eprintln!("sink: global hotkeys unavailable (portal: {portal_err}; x11: {e})");
+            eprintln!("wavesink: global hotkeys unavailable (portal: {portal_err}; x11: {e})");
             Backend::None
         }
         None => {
-            eprintln!("sink: global hotkeys unavailable ({portal_err})");
+            eprintln!("wavesink: global hotkeys unavailable ({portal_err})");
             Backend::None
         }
     }
 }
 
 fn set_backend(app: &AppHandle, backend: Backend) {
-    eprintln!("sink: hotkeys via {}", backend.name());
+    eprintln!("wavesink: hotkeys via {}", backend.name());
     *lock(&app.state::<Hotkeys>().backend) = backend;
     let _ = app.emit("hotkeys-changed", ());
 }
@@ -234,7 +234,7 @@ pub fn perform(app: &AppHandle, action: Action) {
             Action::BalanceCenter => set_balance(&app, 0.0),
         };
         if let Err(e) = result {
-            eprintln!("sink: hotkey {} failed: {e}", action.id());
+            eprintln!("wavesink: hotkey {} failed: {e}", action.id());
         }
     });
 }

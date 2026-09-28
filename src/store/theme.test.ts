@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { THEMES, bootTheme, useTheme } from "./theme";
 
-const STORAGE_KEY = "sink-theme";
+const STORAGE_KEY = "wavesink-theme";
 
 function boot() {
   bootTheme();
@@ -50,6 +50,13 @@ describe("theme", () => {
 
     useTheme.getState().setTheme("original");
     expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it("migrates the legacy theme key", () => {
+    localStorage.setItem("sink-theme", "tokyo-night");
+    expect(boot()).toBe("tokyo-night");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("tokyo-night");
+    expect(localStorage.getItem("sink-theme")).toBeNull();
   });
 
   it("uses a detected Omarchy palette when selected", () => {

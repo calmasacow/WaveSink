@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Flat",
-  "author": "Sink",
+  "author": "WaveSink",
   "description": "The neutral 5-band starting point. Apply to undo any preset.",
   "preamp_db": 0,
   "bands": [

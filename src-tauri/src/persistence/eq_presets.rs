@@ -1,5 +1,5 @@
 //! The user's local EQ preset library: named JSON files (the same schema
-//! as the bundled presets) under `$XDG_CONFIG_HOME/sink/eq_presets/`,
+//! as the bundled presets) under `$XDG_CONFIG_HOME/wavesink/eq_presets/`,
 //! modeled on the profiles store, including its name sanitization.
 
 use std::fs;
@@ -10,9 +10,7 @@ use crate::error::SinkError;
 use crate::persistence::profiles::sanitize_name;
 
 fn presets_dir() -> Result<PathBuf, SinkError> {
-    let dir = crate::persistence::config_root()
-        .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-    Ok(dir.join("sink").join("eq_presets"))
+    Ok(crate::persistence::app_config_dir()?.join("eq_presets"))
 }
 
 /// All user presets, sorted by name. Unreadable files are skipped (one
@@ -36,8 +34,11 @@ pub fn list() -> Result<Vec<EqPreset>, SinkError> {
             Ok(preset) if preset.schema == PRESET_SCHEMA && !preset.bands.is_empty() => {
                 presets.push(preset);
             }
-            Ok(_) => eprintln!("sink: skipping eq preset {}: bad schema", path.display()),
-            Err(e) => eprintln!("sink: skipping eq preset {}: {e}", path.display()),
+            Ok(_) => eprintln!(
+                "wavesink: skipping eq preset {}: bad schema",
+                path.display()
+            ),
+            Err(e) => eprintln!("wavesink: skipping eq preset {}: {e}", path.display()),
         }
     }
     presets.sort_by(|a, b| a.name.cmp(&b.name));

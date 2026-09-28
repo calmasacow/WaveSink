@@ -9,7 +9,7 @@ use crate::error::SinkError;
 /// forgotten. Entries with user intent (assignment, alias, ignore) are exempt.
 pub const MAX_SEEN_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 
-/// One app identity Sink has ever observed playing audio.
+/// One app identity WaveSink has ever observed playing audio.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeenEntry {
     pub match_prop: String,
@@ -29,7 +29,7 @@ pub struct SeenEntry {
 }
 
 /// Registry of every app identity seen; powers the inactive-apps list and
-/// ignore feature. Stored as JSON at `$XDG_CONFIG_HOME/sink/seen_apps.json`.
+/// ignore feature. Stored as JSON at `$XDG_CONFIG_HOME/wavesink/seen_apps.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SeenApps {
     pub apps: Vec<SeenEntry>,
@@ -37,9 +37,7 @@ pub struct SeenApps {
 
 impl SeenApps {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("seen_apps.json"))
+        Ok(crate::persistence::app_config_dir()?.join("seen_apps.json"))
     }
 
     pub fn load() -> Self {
@@ -49,7 +47,7 @@ impl SeenApps {
         match fs::read_to_string(&path) {
             Ok(raw) => {
                 let mut seen: Self = serde_json::from_str(&raw).unwrap_or_else(|e| {
-                    eprintln!("sink: ignoring malformed {}: {e}", path.display());
+                    eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
                     Self::default()
                 });
                 // Scrub nameless entries recorded before empty property

@@ -44,7 +44,7 @@ export function InactiveRow({ app, ignored }: Readonly<{ app: SeenApp; ignored?:
           <IconButton
             reveal
             icon="visibility_off"
-            title="Ignore - hide this app from Sink"
+            title="Ignore - hide this app from WaveSink"
             label={`Ignore ${app.display_name}`}
             onClick={() => void setAppIgnored(app, true)}
           />

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-/// Per-channel output device choices (JSON in `sink/outputs.json`).
+/// Per-channel output device choices (JSON in `wavesink/outputs.json`).
 /// `None` = follow the system default, with automatic failover.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ChannelOutputs {
@@ -19,9 +19,7 @@ pub struct ChannelOutputs {
 
 impl ChannelOutputs {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("outputs.json"))
+        Ok(crate::persistence::app_config_dir()?.join("outputs.json"))
     }
 
     pub fn load() -> Self {
@@ -30,7 +28,7 @@ impl ChannelOutputs {
         };
         match fs::read_to_string(&path) {
             Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-                eprintln!("sink: ignoring malformed {}: {e}", path.display());
+                eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),

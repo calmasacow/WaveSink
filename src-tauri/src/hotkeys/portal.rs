@@ -21,16 +21,16 @@ pub struct Handle {
 }
 
 /// Registered explicitly, or the portal names us after whatever launched us.
-const APP_ID: &str = "us.echo.Sink";
+const APP_ID: &str = "us.echo.WaveSink";
 
 pub async fn connect() -> Result<Handle, String> {
     match APP_ID.parse() {
         Ok(id) => {
             if let Err(e) = ashpd::register_host_app(id).await {
-                eprintln!("sink: portal app registration unavailable: {e}");
+                eprintln!("wavesink: portal app registration unavailable: {e}");
             }
         }
-        Err(e) => eprintln!("sink: bad portal app id: {e}"),
+        Err(e) => eprintln!("wavesink: bad portal app id: {e}"),
     }
     let proxy = GlobalShortcuts::new().await.map_err(|e| e.to_string())?;
     let session = proxy
@@ -49,7 +49,7 @@ pub async fn connect() -> Result<Handle, String> {
     };
     // A dismissed dialog must not cost the session: Settings can bind again.
     if let Err(e) = bind(&handle).await {
-        eprintln!("sink: hotkeys not bound yet: {e}");
+        eprintln!("wavesink: hotkeys not bound yet: {e}");
     }
     Ok(handle)
 }
@@ -80,21 +80,21 @@ pub async fn run(handle: Arc<Handle>, app: &AppHandle) {
     let mut activated = match handle.proxy.receive_activated().await {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("sink: hotkey signals unavailable: {e}");
+            eprintln!("wavesink: hotkey signals unavailable: {e}");
             return;
         }
     };
     let mut deactivated = match handle.proxy.receive_deactivated().await {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("sink: hotkey release signals unavailable: {e}");
+            eprintln!("wavesink: hotkey release signals unavailable: {e}");
             return;
         }
     };
     let mut closed = match handle.session.receive_closed().await {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("sink: hotkey session watch unavailable: {e}");
+            eprintln!("wavesink: hotkey session watch unavailable: {e}");
             return;
         }
     };

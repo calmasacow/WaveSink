@@ -57,7 +57,7 @@ pub fn add_bus(state: State<'_, AppState>, label: String) -> Result<(), String> 
         .backend
         .set_bus_members(&def.name, &def.effective_members(&all))
     {
-        eprintln!("sink: members for new mix {} failed: {e}", def.name);
+        eprintln!("wavesink: members for new mix {} failed: {e}", def.name);
     }
     defs.save().map_err(|e| e.to_string())?;
     let mixer = state.lock_mixer()?;
@@ -149,7 +149,7 @@ pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<()
     if def.mic {
         if let Err(e) = state.backend.set_bus_mic(&def.name, true) {
             eprintln!(
-                "sink: mic membership for renamed mix {} failed: {e}",
+                "wavesink: mic membership for renamed mix {} failed: {e}",
                 def.name
             );
         }
@@ -209,7 +209,7 @@ pub fn set_bus_role_on(
         .map_err(|e| e.to_string())?;
     if def.mic {
         if let Err(e) = state.backend.set_bus_mic(&def.name, true) {
-            eprintln!("sink: mic membership for mix {} failed: {e}", def.name);
+            eprintln!("wavesink: mic membership for mix {} failed: {e}", def.name);
         }
     }
     apply_bus_level(state.backend.as_ref(), &def);

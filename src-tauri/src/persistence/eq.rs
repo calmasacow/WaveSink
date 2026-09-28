@@ -8,7 +8,7 @@ use crate::audio::types::EqConfig;
 use crate::error::SinkError;
 
 /// Per-channel parametric EQ configs, stored as JSON at
-/// `$XDG_CONFIG_HOME/sink/eq.json`. Missing = "never touched" (disabled, flat).
+/// `$XDG_CONFIG_HOME/wavesink/eq.json`. Missing = "never touched" (disabled, flat).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ChannelEq {
     /// `serde(default)` keeps pre-EQ profile files loading cleanly.
@@ -18,9 +18,7 @@ pub struct ChannelEq {
 
 impl ChannelEq {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("eq.json"))
+        Ok(crate::persistence::app_config_dir()?.join("eq.json"))
     }
 
     pub fn load() -> Self {
@@ -29,7 +27,7 @@ impl ChannelEq {
         };
         match fs::read_to_string(&path) {
             Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-                eprintln!("sink: ignoring malformed {}: {e}", path.display());
+                eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),

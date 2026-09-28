@@ -27,7 +27,7 @@ pub fn identity_key(prop: &str, value: &str) -> String {
 }
 
 /// The set of saved app→channel assignments, stored as JSON at
-/// `$XDG_CONFIG_HOME/sink/assignments.json`.
+/// `$XDG_CONFIG_HOME/wavesink/assignments.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Assignments {
     pub assignments: Vec<Assignment>,
@@ -35,9 +35,7 @@ pub struct Assignments {
 
 impl Assignments {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("assignments.json"))
+        Ok(crate::persistence::app_config_dir()?.join("assignments.json"))
     }
 
     /// Load from disk; a missing or unreadable file yields the empty set
@@ -48,7 +46,7 @@ impl Assignments {
         };
         match fs::read_to_string(&path) {
             Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-                eprintln!("sink: ignoring malformed {}: {e}", path.display());
+                eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),

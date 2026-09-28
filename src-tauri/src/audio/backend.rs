@@ -71,7 +71,7 @@ pub trait AudioBackend: Send + Sync {
         percent: u8,
     ) -> Result<(), SinkError>;
 
-    /// Register a matrix hardware source. Volume/mute apply only to Sink's
+    /// Register a matrix hardware source. Volume/mute apply only to WaveSink's
     /// mix sends, never to the physical device's global PipeWire controls.
     fn set_hardware_input(
         &self,

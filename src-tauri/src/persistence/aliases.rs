@@ -14,7 +14,7 @@ pub struct AliasEntry {
     pub alias: String,
 }
 
-/// All saved aliases, stored as JSON at `$XDG_CONFIG_HOME/sink/aliases.json`.
+/// All saved aliases, stored as JSON at `$XDG_CONFIG_HOME/wavesink/aliases.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Aliases {
     pub aliases: Vec<AliasEntry>,
@@ -22,9 +22,7 @@ pub struct Aliases {
 
 impl Aliases {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("aliases.json"))
+        Ok(crate::persistence::app_config_dir()?.join("aliases.json"))
     }
 
     pub fn load() -> Self {
@@ -33,7 +31,7 @@ impl Aliases {
         };
         match fs::read_to_string(&path) {
             Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-                eprintln!("sink: ignoring malformed {}: {e}", path.display());
+                eprintln!("wavesink: ignoring malformed {}: {e}", path.display());
                 Self::default()
             }),
             Err(_) => Self::default(),

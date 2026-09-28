@@ -220,7 +220,7 @@ export function SettingsScreen() {
           <DeviceRow
             icon="mic"
             title="Default input"
-            sub="The microphone the Sink mic chain captures"
+            sub="The microphone the WaveSink mic chain captures"
             devices={inputDevices}
             current={defaults.input}
             onPick={(name) => void pickDefault("input", name)}
@@ -272,8 +272,8 @@ export function SettingsScreen() {
               <Ms name="info" />
             </div>
             <div className="rmain">
-              <div className="rtitle">Sink {version}</div>
-              <div className="rsub">GPL-3.0 · config in ~/.config/sink</div>
+              <div className="rtitle">WaveSink {version}</div>
+              <div className="rsub">GPL-3.0 · config in ~/.config/wavesink</div>
             </div>
           </div>
           <div className="row">
@@ -293,7 +293,7 @@ export function SettingsScreen() {
               <Ms name="restart_alt" />
             </div>
             <div className="rmain">
-              <div className="rtitle">Reset Sink</div>
+              <div className="rtitle">Reset WaveSink</div>
               <div className="rsub">
                 Erase all channels, mixes, profiles, app history and preferences
               </div>
@@ -308,12 +308,12 @@ export function SettingsScreen() {
       <ConfirmModal
         open={confirmingReset}
         onClose={() => setConfirmingReset(false)}
-        title="Reset Sink?"
+        title="Reset WaveSink?"
         confirmLabel="Reset everything"
         onConfirm={() => void invoke("reset_app").catch((e) => setError(String(e)))}
       >
         Everything you've set up - channels, mixes, profiles, app assignments, history and
-        preferences - is permanently deleted, and Sink relaunches as if freshly installed.
+        preferences - is permanently deleted, and WaveSink relaunches as if freshly installed.
       </ConfirmModal>
     </div>
   );

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "sink",
-  "version": "0.9.0",
-  "identifier": "us.echo.Sink",
+  "productName": "wavesink",
+  "version": "0.9.1",
+  "identifier": "us.echo.WaveSink",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "sink",
+        "title": "WaveSink",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -49,6 +49,10 @@
     "targets": ["deb", "rpm", "appimage"],
     "linux": {
       "deb": {
+        "desktopTemplate": "../packaging/linux/wavesink.desktop.hbs",
+        "provides": ["sink"],
+        "conflicts": ["sink"],
+        "replaces": ["sink"],
         "depends": [
           "libayatana-appindicator3-1",
           "pulseaudio-utils",
@@ -56,10 +60,14 @@
           "wireplumber"
         ],
         "files": {
-          "/usr/share/applications/us.echo.Sink.desktop": "../packaging/linux/us.echo.Sink.desktop"
+          "/usr/share/applications/us.echo.WaveSink.desktop": "../packaging/linux/us.echo.WaveSink.desktop"
         }
       },
       "rpm": {
+        "desktopTemplate": "../packaging/linux/wavesink.desktop.hbs",
+        "provides": ["sink"],
+        "conflicts": ["sink"],
+        "obsoletes": ["sink"],
         "depends": [
           "libayatana-appindicator3.so.1()(64bit)",
           "pulseaudio-utils",
@@ -67,7 +75,7 @@
           "wireplumber"
         ],
         "files": {
-          "/usr/share/applications/us.echo.Sink.desktop": "../packaging/linux/us.echo.Sink.desktop"
+          "/usr/share/applications/us.echo.WaveSink.desktop": "../packaging/linux/us.echo.WaveSink.desktop"
         }
       }
     },

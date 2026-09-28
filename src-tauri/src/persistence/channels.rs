@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-/// Sink node names reserved by Sink itself (not user channels).
+/// Sink node names reserved by WaveSink itself (not user channels).
 pub const RESERVED_SINK_NAMES: [&str; 2] = ["sink_mic", "sink_stream"];
 /// Upper bound on user channels (level-meter slots are budgeted for this).
 pub const MAX_CHANNELS: usize = 10;
@@ -44,7 +44,7 @@ fn default_volume() -> u8 {
 }
 
 /// The user's channel set, stored as JSON at
-/// `$XDG_CONFIG_HOME/sink/channels.json`. Defaults to the classic four.
+/// `$XDG_CONFIG_HOME/wavesink/channels.json`. Defaults to the classic four.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Channels {
     pub channels: Vec<ChannelDef>,
@@ -91,9 +91,7 @@ fn slugify(label: &str) -> String {
 
 impl Channels {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = crate::persistence::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("channels.json"))
+        Ok(crate::persistence::app_config_dir()?.join("channels.json"))
     }
 
     pub fn load() -> Self {
@@ -109,11 +107,11 @@ impl Channels {
         match Self::parse(&raw) {
             Some(c) if !c.channels.is_empty() => c,
             Some(_) => {
-                eprintln!("sink: channels.json held no valid channels; using defaults");
+                eprintln!("wavesink: channels.json held no valid channels; using defaults");
                 Self::default()
             }
             None => {
-                eprintln!("sink: channels.json is unreadable (corrupt?); using defaults");
+                eprintln!("wavesink: channels.json is unreadable (corrupt?); using defaults");
                 Self::default()
             }
         }
@@ -135,7 +133,7 @@ impl Channels {
                 channels.push(def);
             } else {
                 eprintln!(
-                    "sink: dropping invalid channel '{}' from channels.json",
+                    "wavesink: dropping invalid channel '{}' from channels.json",
                     def.name
                 );
             }

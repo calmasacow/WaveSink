@@ -102,7 +102,7 @@ jobs:
         with:
           workspaces: .
           # One cache for every job that compiles the same lockfile.
-          shared-key: sink
+          shared-key: wavesink
 
       - name: Install system dependencies
         env:
@@ -172,7 +172,7 @@ jobs:
         with:
           workspaces: .
           # One cache for every job that compiles the same lockfile.
-          shared-key: sink
+          shared-key: wavesink
 
       - name: Install system dependencies
         env:
@@ -220,7 +220,7 @@ jobs:
             echo
             echo "The Arch package is repackaged from the deb, so it is only"
             echo "built on request: add the \`ci:arch\` label to the pull"
-            echo "request and it appears here as **sink-arch-package**."
+            echo "request and it appears here as **wavesink-arch-package**."
             echo
             echo "Labels for the rest: \`ci:fedora\`, \`ci:debian\`,"
             echo "\`ci:opensuse\`, \`ci:appimage\`, or \`ci:distros\` for all."
@@ -277,27 +277,27 @@ jobs:
           name: bundles
           path: bundles
 
-      - name: Install sink
+      - name: Install WaveSink
         run: |
           set -eu
-          deb=$(find bundles -name 'sink_*_amd64.deb' | head -1)
-          rpm=$(find bundles -name 'sink-*.x86_64.rpm' | head -1)
+          deb=$(find bundles -name 'wavesink_*_amd64.deb' | head -1)
+          rpm=$(find bundles -name 'wavesink-*.x86_64.rpm' | head -1)
           case "${{ matrix.distro }}" in
             arch)
               # The AUR package repackages the deb; build it the same way.
-              ver=$(basename "$deb" | sed 's/^sink_//; s/_amd64\.deb$//')
+              ver=$(basename "$deb" | sed 's/^wavesink_//; s/_amd64\.deb$//')
               useradd -m builder
               install -d -o builder /build
-              cp "$deb" "/build/sink_${ver}_amd64.deb"
-              sum=$(sha256sum "/build/sink_${ver}_amd64.deb" | cut -d' ' -f1)
+              cp "$deb" "/build/wavesink_${ver}_amd64.deb"
+              sum=$(sha256sum "/build/wavesink_${ver}_amd64.deb" | cut -d' ' -f1)
               cp packaging/arch/PKGBUILD /build/PKGBUILD
               sed -i "s/^pkgver=.*/pkgver=${ver}/; s/^sha256sums=.*/sha256sums=('${sum}')/" /build/PKGBUILD
               chown -R builder:builder /build
               sudo -u builder bash -lc 'cd /build && makepkg --noconfirm --nodeps'
-              pacman -U --noconfirm /build/sink-bin-*-x86_64.pkg.tar.zst
+              pacman -U --noconfirm /build/wavesink-bin-*-x86_64.pkg.tar.zst
               # Keep it: this is the only package the pr does not already
               # build, and someone may want to install it themselves.
-              cp /build/sink-bin-*-x86_64.pkg.tar.zst .
+              cp /build/wavesink-bin-*-x86_64.pkg.tar.zst .
               ;;
             fedora)
               dnf -y install "$rpm"
@@ -329,5 +329,5 @@ jobs:
         if: matrix.distro == 'arch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sink-arch-package
-          path: sink-bin-*-x86_64.pkg.tar.zst
+          name: wavesink-arch-package
+          path: wavesink-bin-*-x86_64.pkg.tar.zst

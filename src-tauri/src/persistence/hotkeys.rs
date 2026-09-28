@@ -35,9 +35,7 @@ impl Default for HotkeyConfig {
 
 impl HotkeyConfig {
     pub fn config_path() -> Result<PathBuf, SinkError> {
-        let dir = super::config_root()
-            .ok_or_else(|| SinkError::Config("cannot resolve the user config directory".into()))?;
-        Ok(dir.join("sink").join("hotkeys.json"))
+        Ok(super::app_config_dir()?.join("hotkeys.json"))
     }
 
     pub fn load() -> Self {
