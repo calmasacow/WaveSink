@@ -113,10 +113,8 @@ see [OPENCODE_HANDOFF.md](OPENCODE_HANDOFF.md).
 
 ## Contact
 
-If you need help or run into something broken, the discord is the fastest
-way to reach me.
-
-[![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/jUMuSxGf6q)
+For bugs, feature requests, or support, open a
+[GitHub issue](https://github.com/calmasacow/WaveSink/issues).
 
 ## License
 
