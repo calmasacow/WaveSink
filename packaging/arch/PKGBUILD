@@ -4,7 +4,7 @@ pkgver=0.0.0
 pkgrel=1
 pkgdesc="SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire"
 arch=('x86_64')
-url="https://github.com/NC1107/sink"
+url="https://github.com/calmasacow/WaveSink"
 license=('GPL-3.0-only')
 # Direct library deps plus the tray library: libayatana-appindicator is
 # dlopen'd, but the app aborts on startup without it, so it's a hard dep.
@@ -14,7 +14,7 @@ depends=('glibc' 'libgcc' 'glib2' 'gtk3' 'gdk-pixbuf2' 'cairo' 'dbus'
 provides=('sink')
 conflicts=('sink')
 options=('!strip' '!debug')
-source=("https://github.com/NC1107/sink/releases/download/v${pkgver}/sink_${pkgver}_amd64.deb")
+source=("https://github.com/calmasacow/WaveSink/releases/download/v${pkgver}/sink_${pkgver}_amd64.deb")
 noextract=("sink_${pkgver}_amd64.deb")
 sha256sums=('SKIP')
 

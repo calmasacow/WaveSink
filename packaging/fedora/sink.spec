@@ -6,10 +6,10 @@ Release:        1%{?dist}
 Summary:        SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire
 
 License:        GPL-3.0-only
-URL:            https://github.com/NC1107/sink
+URL:            https://github.com/calmasacow/WaveSink
 # Repackaged rather than built from source: a Tauri build needs network for
 # npm/cargo, which a COPR/mock buildroot does not have.
-Source0:        https://github.com/NC1107/sink/releases/download/v%{version}/sink_%{version}_amd64.deb
+Source0:        https://github.com/calmasacow/WaveSink/releases/download/v%{version}/sink_%{version}_amd64.deb
 
 ExclusiveArch:  x86_64
 

@@ -54,24 +54,9 @@ routing, levels, and visual identity.
 
 ## Install
 
-**Arch / Manjaro / EndeavourOS** - from the [AUR](https://aur.archlinux.org/packages/sink-bin):
-
-```bash
-yay -S sink-bin      # or: paru -S sink-bin
-```
-
-**Fedora** - from [COPR](https://copr.fedorainfracloud.org/coprs/nc1107/sink/):
-
-```bash
-sudo dnf copr enable nc1107/sink
-sudo dnf install sink
-```
-
-Both track new releases, so you update through your package manager like any
-other package.
-
-Otherwise, grab the latest from [Releases](https://github.com/NC1107/sink/releases)
-and install the file directly:
+Grab the latest from [WaveSink Releases](https://github.com/calmasacow/WaveSink/releases)
+and install the file directly. WaveSink does not currently publish to AUR or
+COPR.
 
 **Fedora / openSUSE**
 
