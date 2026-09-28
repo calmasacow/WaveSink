@@ -48,8 +48,8 @@ routing, levels, and visual identity.
 - **Themes** - Original, Tokyo Night, or Gruvbox Dark, to match
   the rest of your desktop
 
-![Equalizer](docs/eq.png)
-![Apps](docs/apps.png)
+![Equalizer](assets/EQ_ScreenShot.png)
+![Apps](assets/App_selectScreenshot.png)
 
 ## Install
 
