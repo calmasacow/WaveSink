@@ -45,9 +45,8 @@ routing, levels, and visual identity.
 - **Hardware inputs** - add physical sources to the matrix, then route each
   independently to any mix. Audio FX settings are saved per input.
 - **Profiles** - save and switch full layouts from the tray
-- **Themes** - Original, Tokyo Night, Gruvbox Dark, or the active Omarchy
-  palette. New Omarchy installs default to its live desktop palette; existing
-  selections and the built-in themes remain available everywhere.
+- **Themes** - Original plus all 22 stock Omarchy palettes, available on every
+  distro. Omarchy installs can also follow their live desktop palette.
 
 ![Equalizer](assets/EQ_ScreenShot.png)
 ![Apps](assets/App_selectScreenshot.png)
@@ -119,3 +118,16 @@ For bugs, feature requests, or support, open a
 ## License
 
 [GPL-3.0](LICENSE)
+
+Bundled Omarchy color palettes are used under the MIT License; see
+[third-party notices](THIRD_PARTY_LICENSES.md).
+
+## Credits
+
+- [Sink](https://github.com/NC1107/sink) by Nicholas Conn - original project
+  and inherited codebase.
+- [Omarchy](https://github.com/basecamp/omarchy) - bundled stock color palettes.
+- [Material Symbols](https://fonts.google.com/icons) - interface icon font.
+- [Fira Code](https://github.com/tonsky/FiraCode) - bundled application font.
+- [PipeWire](https://pipewire.org/) - Linux audio graph foundation.
+- [Tauri](https://tauri.app/) - desktop application framework.

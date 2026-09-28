@@ -3188,105 +3188,52 @@ body,
   }
 }
 
-/* Themes (opt-in via <html data-theme="...">); the EQ band palette stays shared across all of them. */
-:root[data-theme="tokyo-night"] {
-  --bg-main: #1a1b26;
-  --bg-sidebar: #16161e;
-  --bg-chat: #1a1b26;
-  --bg-surface: #1f2335;
-  --bg-surface-hover: #24283b;
-  --bg-active: #292e42;
-
-  --fg-primary: #c0caf5;
-  --fg-secondary: #a9b1d6;
-  --fg-muted: #9aa5ce;
-
-  --accent: #7aa2f7;
-  --accent-hover: #9eb8f9;
-  --accent-light: rgba(122, 162, 247, 0.12);
-  --on-accent: #1a1b26;
-
-  --bg-popover: #24283b;
-  --bg-popover-hover: #2f334d;
-
-  --border: #2a2e42;
-  --border-popover: #3b4261;
-
-  --online: #9ece6a;
-  --danger: #f7768e;
-  --warning: #e0af68;
-  --danger-rgb: 247, 118, 142;
-  --online-rgb: 158, 206, 106;
-  --tint-channel: #2f3d63;
-  --tint-channel-wash: rgba(122, 162, 247, 0.07);
-  --tint-bus: #4b3a1e;
-  --tint-bus-wash: rgba(224, 175, 104, 0.06);
-  --tint-bus-fg: #e0af68;
-  --tint-bus-icon: rgba(224, 175, 104, 0.12);
-}
-
-:root[data-theme="gruvbox-dark"] {
-  --bg-main: #282828;
-  --bg-sidebar: #1d2021;
-  --bg-chat: #282828;
-  --bg-surface: #32302f;
-  --bg-surface-hover: #3c3836;
-  --bg-active: #504945;
-
-  --fg-primary: #ebdbb2;
-  --fg-secondary: #d5c4a1;
-  --fg-muted: #a89984;
-
-  --accent: #fe8019;
-  --accent-hover: #fe9a47;
-  --accent-light: rgba(254, 128, 25, 0.12);
-  --on-accent: #282828;
-
-  --bg-popover: #3c3836;
-  --bg-popover-hover: #504945;
-
-  --border: #3c3836;
-  --border-popover: #504945;
-
-  --online: #b8bb26;
-  --danger: #fb4934;
-  --warning: #fabd2f;
-  --danger-rgb: 251, 73, 52;
-  --online-rgb: 184, 187, 38;
-  --tint-channel: #5b3a17;
-  --tint-channel-wash: rgba(254, 128, 25, 0.07);
-  --tint-bus: #553a44;
-  --tint-bus-wash: rgba(211, 134, 155, 0.07);
-  --tint-bus-fg: #d3869b;
-  --tint-bus-icon: rgba(211, 134, 155, 0.14);
-}
-
-/* Theme picker (Settings › Appearance) */
-.theme-picker {
+/* Theme picker (Settings > Appearance) */
+.theme-choice {
   display: flex;
-  gap: var(--sp-2);
-}
-.theme-swatch {
-  display: flex;
-  flex-direction: column;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  background: var(--bg-main);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: border-color 0.12s;
+  justify-content: flex-end;
+  gap: var(--sp-4);
 }
-.theme-swatch:hover {
-  border-color: var(--accent-hover);
+.theme-select-wrap {
+  position: relative;
+  flex: 0 0 230px;
 }
-.theme-swatch.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.theme-select {
+  width: 100%;
+}
+.theme-select-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.theme-description {
+  flex: 0 1 340px;
+  min-width: 180px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+.theme-menu-item {
+  justify-content: space-between;
+}
+.theme-menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 .theme-swatch-colors {
   display: flex;
+  flex: 0 0 auto;
 }
 .theme-swatch-colors i {
   width: 16px;
@@ -3300,12 +3247,18 @@ body,
 .theme-swatch-colors i:last-child {
   border-radius: 0 var(--r-xs) var(--r-xs) 0;
 }
-.theme-swatch-label {
-  font-size: var(--fs-caption);
-  color: var(--fg-secondary);
-}
-.theme-swatch.active .theme-swatch-label {
-  color: var(--fg-primary);
+@media (max-width: 780px) {
+  .theme-choice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .theme-select-wrap {
+    flex-basis: auto;
+  }
+  .theme-description {
+    flex-basis: auto;
+    min-width: 0;
+  }
 }
 
 /* ---------- send levels (mix membership popover) ---------- */

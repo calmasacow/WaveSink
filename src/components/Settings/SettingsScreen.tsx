@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useMixerStore } from "../../store/mixer";
-import { useTheme, THEMES } from "../../store/theme";
+import { useTheme, themeOptions, type ThemeId } from "../../store/theme";
 import type { OutputDevice } from "../../types";
 import { Ms } from "../Icons";
 import { HotkeysSection } from "./HotkeysSection";
@@ -14,6 +14,67 @@ import { Toggle } from "../Toggle";
 interface DefaultDevices {
   output: string | null;
   input: string | null;
+}
+
+function ThemeSwatch({ colors }: Readonly<{ colors: readonly string[] }>) {
+  return (
+    <span className="theme-swatch-colors" aria-hidden="true">
+      {colors.map((color) => (
+        <i key={color} style={{ background: color }} />
+      ))}
+    </span>
+  );
+}
+
+function ThemePicker() {
+  const [open, setOpen] = useState(false);
+  const { theme, omarchy, setTheme } = useTheme();
+  const options = themeOptions(omarchy);
+  const selected = options.find((entry) => entry.id === theme) ?? options[0];
+  const choose = (id: ThemeId) => {
+    setTheme(id);
+    setOpen(false);
+  };
+
+  return (
+    <div className="theme-choice">
+      <div className="theme-select-wrap">
+        <button
+          type="button"
+          className="select theme-select"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ThemeSwatch colors={selected.swatch} />
+          <span className="theme-select-name">{selected.label}</span>
+          <Ms name="expand_more" />
+        </button>
+        <Popover
+          open={open}
+          onClose={() => setOpen(false)}
+          side="bottom"
+          align="end"
+          style={{ width: 300, maxHeight: "min(560px, calc(100vh - 32px))", overflowY: "auto" }}
+        >
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.id === theme}
+              className={"menu-item theme-menu-item" + (option.id === theme ? " sel" : "")}
+              onClick={() => choose(option.id as ThemeId)}
+            >
+              <ThemeSwatch colors={option.swatch} />
+              <span className="theme-menu-name">{option.label}</span>
+            </button>
+          ))}
+        </Popover>
+      </div>
+      <p className="theme-description">{selected.description}</p>
+    </div>
+  );
 }
 
 /** Card row with a device dropdown for picking a system default. */
@@ -79,7 +140,6 @@ function engineDesc(native: boolean | null): string {
 }
 
 export function SettingsScreen() {
-  const { theme, omarchy, setTheme } = useTheme();
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [startMinimized, setStartMinimized] = useState(false);
   const [backendNative, setBackendNative] = useState<boolean | null>(null);
@@ -160,39 +220,7 @@ export function SettingsScreen() {
               <div className="rtitle">Theme</div>
               <div className="rsub">Match the app to your desktop</div>
             </div>
-            <div className="theme-picker">
-              {omarchy && (
-                <button
-                  type="button"
-                  className={"theme-swatch" + (theme === "omarchy" ? " active" : "")}
-                  onClick={() => setTheme("omarchy")}
-                  title={`Follow Omarchy: ${omarchy.name}`}
-                >
-                  <span className="theme-swatch-colors">
-                    <i style={{ background: omarchy.colors.background }} />
-                    <i style={{ background: omarchy.colors.accent }} />
-                    <i style={{ background: omarchy.colors.bright_foreground }} />
-                  </span>
-                  <span className="theme-swatch-label">Omarchy</span>
-                </button>
-              )}
-              {THEMES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={"theme-swatch" + (t.id === theme ? " active" : "")}
-                  onClick={() => setTheme(t.id)}
-                  title={t.label}
-                >
-                  <span className="theme-swatch-colors">
-                    {t.swatch.map((c) => (
-                      <i key={c} style={{ background: c }} />
-                    ))}
-                  </span>
-                  <span className="theme-swatch-label">{t.label}</span>
-                </button>
-              ))}
-            </div>
+            <ThemePicker />
           </div>
         </div>
 
