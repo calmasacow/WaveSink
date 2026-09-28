@@ -5,7 +5,7 @@ use crate::state::AppState;
 
 /// Legacy buses own membership and levels while the graph migration runs.
 /// Matrix-only fields must survive that projection on every read.
-fn project_legacy(model: &mut RoutingModel, legacy: &RoutingModel) {
+pub(crate) fn project_legacy(model: &mut RoutingModel, legacy: &RoutingModel) {
     let saved_inputs = model.inputs.clone();
     let saved_mixes = model.mixes.clone();
     let extras = model
@@ -110,7 +110,9 @@ pub fn reorder_matrix_inputs(state: State<'_, AppState>, order: Vec<String>) -> 
     for (index, input) in mixer.routing.inputs.iter_mut().enumerate() {
         input.order = index as u32;
     }
-    mixer.routing.save().map_err(|e| e.to_string())
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
 #[tauri::command]
@@ -120,7 +122,50 @@ pub fn reorder_matrix_mixes(state: State<'_, AppState>, order: Vec<String>) -> R
     for (index, mix) in mixer.routing.mixes.iter_mut().enumerate() {
         mix.order = index as u32;
     }
-    mixer.routing.save().map_err(|e| e.to_string())
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::buses::Buses;
+    use crate::persistence::channels::Channels;
+    use crate::persistence::outputs::ChannelOutputs;
+
+    #[test]
+    fn legacy_projection_preserves_saved_order_and_appends_new_items() {
+        let channels = Channels::default();
+        let mut buses = Buses::default();
+        buses.add("Stream").unwrap();
+        buses.add("Chat").unwrap();
+        let legacy = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        let mut saved = legacy.clone();
+        saved.inputs.reverse();
+        saved.mixes.reverse();
+
+        let new_input = InputDef {
+            id: "sink_new".into(),
+            label: "New".into(),
+            icon: None,
+            icon_color: None,
+            kind: InputKind::Software,
+            source_name: "sink_new".into(),
+            volume_percent: 100,
+            muted: false,
+            fx: FxChain::default(),
+            order: legacy.inputs.len() as u32,
+        };
+        let mut current = legacy.clone();
+        current.inputs.push(new_input);
+
+        project_legacy(&mut saved, &current);
+
+        assert_eq!(saved.inputs[0].id, legacy.inputs.last().unwrap().id);
+        assert_eq!(saved.inputs.last().unwrap().id, "sink_new");
+        assert_eq!(saved.mixes[0].id, legacy.mixes.last().unwrap().id);
+    }
 }
 
 /// Add a hardware source to the matrix. It remains present while disconnected

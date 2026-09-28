@@ -317,33 +317,7 @@ pub fn init_virtual_devices(
             &mixer.buses,
             &mixer.outputs,
         );
-        let extras = mixer
-            .routing
-            .inputs
-            .iter()
-            .filter(|input| {
-                !legacy
-                    .inputs
-                    .iter()
-                    .any(|legacy_input| legacy_input.id == input.id)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        mixer.routing.inputs = legacy.inputs;
-        mixer.routing.inputs.extend(extras);
-        mixer.routing.mixes = legacy
-            .mixes
-            .into_iter()
-            .map(|mut mix| {
-                if let Some(saved) = mixer.routing.mixes.iter().find(|saved| saved.id == mix.id) {
-                    mix.icon = saved.icon.clone();
-                    mix.icon_color = saved.icon_color.clone();
-                    mix.muted = saved.muted;
-                    mix.output_bindings = saved.output_bindings.clone();
-                }
-                mix
-            })
-            .collect();
+        crate::commands::matrix::project_legacy(&mut mixer.routing, &legacy);
         let mix_mutes = mixer
             .routing
             .mixes
