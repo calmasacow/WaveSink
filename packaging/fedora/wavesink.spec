@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           wavesink
-Version:        0.9.1
+Version:        0.9.2
 Release:        1%{?dist}
 Summary:        SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire
 

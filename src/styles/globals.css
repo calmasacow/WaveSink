@@ -1976,7 +1976,11 @@ body,
   opacity: 0.55;
 }
 .wave-input-icon {
-  display: contents;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 35px;
+  display: grid;
+  place-items: center;
   border: 0;
   padding: 0;
   background: transparent;
