@@ -153,10 +153,12 @@ jobs:
           [ "$(dpkg-deb -f "$deb" Provides)" = sink ]
           [ "$(dpkg-deb -f "$deb" Conflicts)" = sink ]
           [ "$(dpkg-deb -f "$deb" Replaces)" = sink ]
-          dpkg-deb -c "$deb" > /tmp/wavesink-deb-contents
-          grep -q '/usr/bin/wavesink$' /tmp/wavesink-deb-contents
-          ! grep -q '/usr/bin/sink$' /tmp/wavesink-deb-contents
-          ! grep -q '/sink\.desktop$' /tmp/wavesink-deb-contents
+          rm -rf /tmp/wavesink-deb-root
+          dpkg-deb -x "$deb" /tmp/wavesink-deb-root
+          test -x /tmp/wavesink-deb-root/usr/bin/wavesink
+          test ! -e /tmp/wavesink-deb-root/usr/bin/sink
+          test ! -e /tmp/wavesink-deb-root/usr/share/applications/sink.desktop
+          test -e /tmp/wavesink-deb-root/usr/share/applications/wavesink.desktop
 
       - name: Repack AppImage against system PipeWire
         # Strip the bundled libpipewire so the loader uses the system one.
