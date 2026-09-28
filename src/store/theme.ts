@@ -120,6 +120,7 @@ export const useTheme = create<ThemeState>((set, get) => ({
   },
   refreshOmarchy: async () => {
     const omarchy = await invoke<OmarchyTheme | null>("get_omarchy_theme").catch(() => null);
+    document.documentElement.toggleAttribute("data-omarchy", omarchy !== null);
     const saved = localStorage.getItem(STORAGE_KEY);
     const theme = !saved && omarchy ? "omarchy" : get().theme;
     if (!saved && omarchy) localStorage.setItem(STORAGE_KEY, theme);

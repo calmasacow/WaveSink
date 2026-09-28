@@ -156,6 +156,9 @@ body,
   border-radius: var(--r-xl);
   overflow: hidden;
 }
+:root[data-omarchy] .window {
+  border-radius: 0;
+}
 
 /* ---------- Headerbar ---------- */
 .headerbar {
@@ -172,6 +175,8 @@ body,
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  /* Align the 32px brand icon to the 76px navigation rail below. */
+  margin-left: 8px;
 }
 .hb-logo {
   width: 32px;
@@ -2099,15 +2104,18 @@ body,
   font-size: 14px;
 }
 .wave-send-toggle:hover,
-.wave-send-mute:hover:not(:disabled),
-.wave-send-mute.active:hover:not(:disabled) {
+.wave-send-mute:hover:not(:disabled) {
   background: var(--accent);
   color: var(--on-accent);
 }
 .wave-send-mute.active {
   border-color: var(--danger);
   background: var(--danger);
-  color: #fff;
+  color: var(--bg-main);
+}
+.wave-send-mute.active:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg-main);
 }
 .wave-send-mute:disabled {
   opacity: 0.1;

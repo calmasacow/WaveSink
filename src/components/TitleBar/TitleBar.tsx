@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMixerStore } from "../../store/mixer";
+import { useTheme } from "../../store/theme";
 import { Ms } from "../Icons";
 import appIcon from "../../../assets/WaveSinkIcon.png";
 import { ProfileMenu } from "./ProfileMenu";
@@ -12,6 +13,7 @@ export function TitleBar({ screen }: Readonly<{ screen: string }>) {
   const win = getCurrentWindow();
   const error = useMixerStore((s) => s.error);
   const initialized = useMixerStore((s) => s.initialized);
+  const omarchy = useTheme((s) => s.omarchy);
 
   let status = "Starting…";
   if (error) status = "Engine error";
@@ -35,22 +37,26 @@ export function TitleBar({ screen }: Readonly<{ screen: string }>) {
         {status}
       </div>
       <div className="wctl">
-        <button
-          type="button"
-          className="wbtn"
-          aria-label="Minimize"
-          onClick={() => void win.minimize()}
-        >
-          <Ms name="remove" />
-        </button>
-        <button
-          type="button"
-          className="wbtn"
-          aria-label="Maximize"
-          onClick={() => void win.toggleMaximize()}
-        >
-          <Ms name="crop_square" style={{ fontSize: 13 }} />
-        </button>
+        {!omarchy && (
+          <>
+            <button
+              type="button"
+              className="wbtn"
+              aria-label="Minimize"
+              onClick={() => void win.minimize()}
+            >
+              <Ms name="remove" />
+            </button>
+            <button
+              type="button"
+              className="wbtn"
+              aria-label="Maximize"
+              onClick={() => void win.toggleMaximize()}
+            >
+              <Ms name="crop_square" style={{ fontSize: 13 }} />
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="wbtn close"
