@@ -1,18 +1,23 @@
-# Sink
+<p align="center">
+  <img src="assets/WaveSink.png" alt="WaveSink" width="220">
+</p>
+
+# WaveSink
 
 Linux-native input/mix routing for PipeWire, inspired by the workflow of
 modern creator mixers.
 
 Group unlimited apps into software inputs such as Game, Chat, and Music;
 then build independent Personal, Stream, Chat, and custom mixes for
-monitoring and capture. The processed microphone is another matrix input.
+monitoring and capture. Hardware inputs join the same matrix with independent
+routing, levels, and visual identity.
 
-![Mixer](docs/mixer.png)
+![WaveSink mixer](assets/screenshot-2026-09-27_19-46-48.png)
 
 ```
  inputs ──► independent route cells ──► Personal / Stream / Chat mixes
                                                ├──► headphones / speakers
-                                               └──► Sink: <mix> for OBS/Discord
+                                               └──► WaveSink: <mix> for OBS/Discord
 ```
 
 ## Features
@@ -37,16 +42,13 @@ monitoring and capture. The processed microphone is another matrix input.
 - **Equalizer** - per-input parametric EQ (up to 10 bands) with a
   draggable response curve, bundled community presets, and import/export
   including AutoEq text blocks
-- **Microphone** - noise gate, compressor and limiter into a virtual mic
-  you select in Discord or OBS. Pairs well with
-  [NoiseTorch](https://github.com/noisetorch/NoiseTorch) on the input for
-  noise suppression before the chain.
+- **Hardware inputs** - add physical sources to the matrix, then route each
+  independently to any mix. Audio FX settings are saved per input.
 - **Profiles** - save and switch full layouts from the tray
 - **Themes** - Original, Tokyo Night, or Gruvbox Dark, to match
   the rest of your desktop
 
 ![Equalizer](docs/eq.png)
-![Mic](docs/mic.png)
 ![Apps](docs/apps.png)
 
 ## Install

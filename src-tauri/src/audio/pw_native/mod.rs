@@ -224,6 +224,13 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
+    fn remove_hardware_input(&self, id: &str) -> Result<(), SinkError> {
+        self.request(|reply| Cmd::RemoveHardwareInput {
+            id: id.to_string(),
+            reply,
+        })
+    }
+
     fn set_mix_outputs(
         &self,
         name: &str,

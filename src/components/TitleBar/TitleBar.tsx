@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMixerStore } from "../../store/mixer";
-import { Ms, SinkMark } from "../Icons";
-import { BalanceBar } from "../MixerBoard/BalanceBar";
+import { Ms } from "../Icons";
+import appIcon from "../../../assets/WaveSinkIcon.png";
 import { ProfileMenu } from "./ProfileMenu";
 
 /**
@@ -19,19 +19,16 @@ export function TitleBar({ screen }: Readonly<{ screen: string }>) {
 
   return (
     <header data-tauri-drag-region className="headerbar">
-      <div data-tauri-drag-region className="hb-brand">
-        <div className="hb-logo">
-          <SinkMark />
-        </div>
+        <div data-tauri-drag-region className="hb-brand">
+          <img className="hb-logo" src={appIcon} alt="" />
         <div data-tauri-drag-region className="hb-title">
-          Sink
+          WaveSink
         </div>
       </div>
       <div data-tauri-drag-region className="hb-sub">
         {screen}
       </div>
       <div data-tauri-drag-region className="hb-spacer" />
-      <BalanceBar />
       <ProfileMenu />
       <div className={"hb-status" + (error ? " err" : "")}>
         <span className="dot" />

@@ -1,4 +1,4 @@
-Sink - icon pack
+WaveSink - icon pack
 ================
 
 App ID: us.echo.Sink

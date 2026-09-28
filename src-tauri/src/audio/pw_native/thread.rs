@@ -130,6 +130,10 @@ pub enum Cmd {
         muted: bool,
         reply: Reply<()>,
     },
+    RemoveHardwareInput {
+        id: String,
+        reply: Reply<()>,
+    },
     SetMixOutputs {
         name: String,
         outputs: Vec<crate::routing_model::OutputBinding>,
@@ -1805,6 +1809,22 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             ensure_all_links(state);
             let _ = reply.send(Ok(()));
         }
+        Cmd::RemoveHardwareInput { id, reply } => {
+            let mut s = state.borrow_mut();
+            s.hardware_inputs.remove(&id);
+            s.hardware_route_gains.retain(|(_, input), _| input != &id);
+            s.bus_members.values_mut().for_each(|members| {
+                members.remove(&id);
+            });
+            s.bus_member_gains.retain(|(_, input), _| input != &id);
+            s.bus_links.retain(|(_, input), _| input != &id);
+            s.send_gains.retain(|(_, input), _| input != &id);
+            s.send_gain_in_links.retain(|(_, input), _| input != &id);
+            s.send_gain_failed.retain(|(_, input)| input != &id);
+            drop(s);
+            ensure_all_links(state);
+            let _ = reply.send(Ok(()));
+        }
         Cmd::SetMixOutputs {
             name,
             outputs,
@@ -2045,13 +2065,7 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             let inputs = s
                 .nodes
                 .values()
-                .filter(|n| {
-                    let name = n.props.get("node.name").map(String::as_str);
-                    n.media_class == SOURCE_CLASS
-                        || (n.media_class == VIRTUAL_SOURCE_CLASS
-                            && name != Some(MIC_NODE)
-                            && !name.is_some_and(is_bus_name))
-                })
+                .filter(|n| n.media_class == SOURCE_CLASS || n.media_class == VIRTUAL_SOURCE_CLASS)
                 .map(|n| OutputDevice {
                     index: n.id,
                     name: n.props.get("node.name").cloned().unwrap_or_default(),

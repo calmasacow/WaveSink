@@ -136,6 +136,7 @@ export interface BusDef {
   name: string;
   label: string;
   icon?: string | null;
+  icon_color?: string | null;
   /** Manual mode: carried channels. Auto-include mode: excluded channels. */
   channels: string[];
   /** True = carries everything except `channels`; new channels join automatically. */
@@ -160,7 +161,12 @@ export interface FxChain {
   gate_enabled: boolean;
   compressor_enabled: boolean;
   limiter_enabled: boolean;
+  gate_threshold_db: number;
+  compressor_threshold_db: number;
+  compressor_ratio: number;
+  limiter_ceiling_db: number;
 }
+export const FX_DEFAULTS = { gate_threshold_db: -40, compressor_threshold_db: -18, compressor_ratio: 3, limiter_ceiling_db: -1 } as const;
 export interface RoutingInput {
   id: string;
   label: string;
@@ -178,6 +184,7 @@ export interface RoutingMix {
   id: string;
   label: string;
   icon: string | null;
+  icon_color: string | null;
   volume_percent: number;
   muted: boolean;
   output_bindings: OutputBinding[];
@@ -223,6 +230,4 @@ export interface HotkeyShortcut {
 export interface HotkeyStatus {
   backend: "portal" | "x11" | "none";
   shortcuts: HotkeyShortcut[];
-  balance_step: number;
-  steps: number[];
 }

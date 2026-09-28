@@ -3,7 +3,6 @@ import { getVersion } from "@tauri-apps/api/app";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import { RoutingTable } from "./components/MixerBoard/RoutingTable";
 import { AppList } from "./components/AppList/AppList";
-import { MicScreen } from "./components/Mic/MicScreen";
 import { OnboardingModal } from "./components/Onboarding/OnboardingModal";
 import { SettingsScreen } from "./components/Settings/SettingsScreen";
 import { Ms } from "./components/Icons";
@@ -14,7 +13,6 @@ import { useMixerStore } from "./store/mixer";
 const NAV = [
   { id: "mixer", icon: "graphic_eq", label: "Mixer" },
   { id: "apps", icon: "grid_view", label: "Apps" },
-  { id: "mic", icon: "mic", label: "Mic" },
 ] as const;
 
 type NavId = (typeof NAV)[number]["id"] | "settings";
@@ -36,11 +34,10 @@ export default function App() {
   let screen;
   if (nav === "mixer") screen = <RoutingTable />;
   else if (nav === "apps") screen = <AppList />;
-  else if (nav === "mic") screen = <MicScreen />;
   else screen = <SettingsScreen />;
 
   return (
-    <div className="window">
+    <div className="window" onContextMenu={(event) => event.preventDefault()}>
       <TitleBar screen={current.label} />
 
       {error && (

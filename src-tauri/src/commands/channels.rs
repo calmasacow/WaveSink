@@ -112,6 +112,32 @@ pub fn set_channel_icon(
     defs.save().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn set_channel_icon_color(
+    state: State<'_, AppState>,
+    sink_name: String,
+    icon_color: String,
+) -> Result<(), String> {
+    let defs = {
+        let mut mixer = state.lock_mixer()?;
+        let color = if icon_color.is_empty() {
+            None
+        } else {
+            Some(icon_color)
+        };
+        mixer
+            .channel_defs
+            .set_icon_color(&sink_name, color.clone())
+            .map_err(|e| e.to_string())?;
+        if let Some(channel) = mixer.channel_mut(&sink_name) {
+            channel.icon_color = color;
+        }
+        crate::commands::profiles::autosave_active(&mixer);
+        mixer.channel_defs.clone()
+    };
+    defs.save().map_err(|e| e.to_string())
+}
+
 /// Rename a channel's display label (the sink name stays stable, so
 /// assignments, outputs and profiles keep working).
 #[tauri::command]

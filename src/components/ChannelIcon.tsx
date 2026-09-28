@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-export const CHANNEL_ICON_IDS = ["game", "chat", "music", "system", "mic", "broadcast", "browser", "terminal", "star", "generic"] as const;
+export const CHANNEL_ICON_IDS = ["game", "chat", "music", "system", "mic", "broadcast", "browser", "terminal", "star", "generic", "headphones", "public", "webcam", "camera", "forum"] as const;
 export const CHANNEL_COLORS = ["slate", "gray", "red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "blue", "purple"] as const;
 type IconId = (typeof CHANNEL_ICON_IDS)[number];
 
@@ -15,9 +15,23 @@ const paths: Record<IconId, string> = {
   terminal: "M5 5h14v14H5V5Zm3 4 3 3-3 3m5 0h3",
   star: "m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8L12 4Z",
   generic: "M12 4v16M4 12h16",
+  headphones: "M4 14v-2a8 8 0 0 1 16 0v2m-16 0v4h4v-5H4m16 1v4h-4v-5h4",
+  public: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16",
+  webcam: "M6 7h12v10H6V7Zm3 13h6m-3-3v3m-1.5-9.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0",
+  camera: "M4 8h4l1.5-2h5L16 8h4v10H4V8Zm8 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6",
+  forum: "M4 5h12v9H9l-4 4V5Zm6 11h6l4 3v-9h-2",
 };
 
+const legacyIds: Record<string, IconId> = {
+  sports_esports: "game", forum: "forum", music_note: "music", desktop_windows: "system", headphones: "headphones", globe: "public", public: "public",
+};
+
+export function channelIconId(id: string | null): IconId {
+  return legacyIds[id ?? ""] ?? (CHANNEL_ICON_IDS.includes(id as IconId) ? id as IconId : "generic");
+}
+
 export function ChannelIcon({ id, color, style }: Readonly<{ id: string | null; color?: string | null; style?: CSSProperties }>) {
-  const icon = CHANNEL_ICON_IDS.includes(id as IconId) ? (id as IconId) : "generic";
+  const icon = channelIconId(id);
+  if (icon === "public") return <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}><span className="ms material-symbols-outlined">public</span></span>;
   return <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={paths[icon]} /></svg></span>;
 }

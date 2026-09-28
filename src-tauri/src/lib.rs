@@ -71,10 +71,12 @@ pub fn run() {
             commands::channels::reorder_channels,
             commands::channels::remove_channel,
             commands::channels::set_channel_icon,
+            commands::channels::set_channel_icon_color,
             commands::buses::list_buses,
             commands::buses::add_bus,
             commands::buses::rename_bus,
             commands::buses::set_bus_icon,
+            commands::buses::set_bus_icon_color,
             commands::buses::remove_bus,
             commands::buses::set_bus_members,
             commands::buses::set_bus_mic,
@@ -85,9 +87,13 @@ pub fn run() {
             commands::buses::set_bus_member_gain,
             commands::buses::open_mix_fader_window,
             commands::matrix::get_routing_model,
+            commands::matrix::reorder_matrix_inputs,
+            commands::matrix::reorder_matrix_mixes,
             commands::matrix::add_hardware_input,
             commands::matrix::set_route_cell,
             commands::matrix::set_input_level,
+            commands::matrix::update_hardware_input,
+            commands::matrix::remove_hardware_input,
             commands::matrix::set_mix_monitor,
             commands::matrix::clear_mix_monitor,
             commands::matrix::set_mix_outputs,
@@ -301,7 +307,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn s
 /// Rebuild the tray menu (called after anything that changes profiles or
 /// their active state).
 pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
-    if let Some(tray) = app.tray_by_id("sink-tray") {
+    if let Some(tray) = app.tray_by_id("wavesink-tray") {
         match build_tray_menu(app) {
             Ok(menu) => {
                 if let Err(e) = tray.set_menu(Some(menu)) {
@@ -316,13 +322,11 @@ pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
 fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_tray_menu(app.handle())?;
 
-    // Dedicated 22px tray glyph from the icon pack (white for the common
-    // dark panel; the full-color icon stays on the window/dock).
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-white-22.png"))?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/WaveSinkTray.png"))?;
 
-    TrayIconBuilder::with_id("sink-tray")
-        .icon(icon)
-        .tooltip("sink")
+    let tray = TrayIconBuilder::with_id("wavesink-tray")
+        .icon(icon.clone())
+        .tooltip("WaveSink")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| {
@@ -357,6 +361,7 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .build(app)?;
+    tray.set_icon(Some(icon))?;
 
     Ok(())
 }

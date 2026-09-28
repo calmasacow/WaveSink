@@ -80,6 +80,7 @@ pub trait AudioBackend: Send + Sync {
         volume_percent: u8,
         muted: bool,
     ) -> Result<(), SinkError>;
+    fn remove_hardware_input(&self, id: &str) -> Result<(), SinkError>;
 
     /// Replace physical playback targets for a mix. Bindings are independent
     /// from session-only monitoring and may contain more than one device.

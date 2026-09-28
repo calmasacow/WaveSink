@@ -90,8 +90,6 @@ export function SettingsScreen() {
   const outputDevices = useMixerStore((s) => s.outputDevices);
   const inputDevices = useMixerStore((s) => s.inputDevices);
   const replayOnboarding = useMixerStore((s) => s.replayOnboarding);
-  const showBalance = useMixerStore((s) => s.showBalance);
-  const setBalanceVisible = useMixerStore((s) => s.setBalanceVisible);
 
   useEffect(() => {
     void invoke<boolean>("get_autostart").then(setAutostart);
@@ -208,16 +206,6 @@ export function SettingsScreen() {
             current={defaults.input}
             onPick={(name) => void pickDefault("input", name)}
           />
-          <div className="row">
-            <div className="ricon">
-              <Ms name="balance" />
-            </div>
-            <div className="rmain">
-              <div className="rtitle">Balance slider</div>
-              <div className="rsub">ChatMix-style blend of two channels in the title bar</div>
-            </div>
-            <Toggle on={showBalance} onClick={() => void setBalanceVisible(!showBalance)} />
-          </div>
           <div className="row">
             <div className="ricon">
               <Ms name="rocket_launch" />

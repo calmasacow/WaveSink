@@ -26,6 +26,8 @@ pub struct BusDef {
     /// Bundled SVG icon id shown by the matrix header.
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub icon_color: Option<String>,
     /// Exclude mode (false): channels carried by this mix.
     /// Exclude mode (true): channels kept OUT of this mix.
     pub channels: Vec<String>,
@@ -95,6 +97,7 @@ impl Default for Buses {
                 name: "sink_bus_default".into(),
                 label: "Default".into(),
                 icon: Some("system".into()),
+                icon_color: Some("purple".into()),
                 channels: Vec::new(),
                 exclude: true,
                 volume_percent: 100,
@@ -164,6 +167,9 @@ impl Buses {
     fn clamp_loaded(&mut self) {
         for bus in &mut self.buses {
             bus.role = MixRole::Recording;
+            if bus.icon_color.is_none() {
+                bus.icon_color = Some("purple".into());
+            }
             bus.volume_percent = bus.volume_percent.min(150);
             bus.member_gains.retain(|_, percent| {
                 *percent = (*percent).min(150);
@@ -247,6 +253,7 @@ impl Buses {
             name,
             label: label.to_string(),
             icon: Some("broadcast".into()),
+            icon_color: Some("purple".into()),
             channels: Vec::new(),
             exclude: true,
             volume_percent: 100,
@@ -273,6 +280,11 @@ impl Buses {
 
     pub fn set_icon(&mut self, name: &str, icon: String) -> Result<(), SinkError> {
         self.get_mut(name)?.icon = Some(icon);
+        Ok(())
+    }
+
+    pub fn set_icon_color(&mut self, name: &str, icon_color: String) -> Result<(), SinkError> {
+        self.get_mut(name)?.icon_color = Some(icon_color);
         Ok(())
     }
 

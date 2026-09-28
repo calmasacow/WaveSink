@@ -38,6 +38,14 @@ pub struct FxChain {
     pub compressor_enabled: bool,
     #[serde(default)]
     pub limiter_enabled: bool,
+    #[serde(default = "default_gate_threshold")]
+    pub gate_threshold_db: f32,
+    #[serde(default = "default_compressor_threshold")]
+    pub compressor_threshold_db: f32,
+    #[serde(default = "default_compressor_ratio")]
+    pub compressor_ratio: f32,
+    #[serde(default = "default_limiter_ceiling")]
+    pub limiter_ceiling_db: f32,
 }
 
 impl Default for FxChain {
@@ -48,6 +56,10 @@ impl Default for FxChain {
             gate_enabled: false,
             compressor_enabled: false,
             limiter_enabled: false,
+            gate_threshold_db: default_gate_threshold(),
+            compressor_threshold_db: default_compressor_threshold(),
+            compressor_ratio: default_compressor_ratio(),
+            limiter_ceiling_db: default_limiter_ceiling(),
         }
     }
 }
@@ -86,6 +98,8 @@ pub struct MixDef {
     pub label: String,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub icon_color: Option<String>,
     #[serde(default = "default_level")]
     pub volume_percent: u8,
     #[serde(default)]
@@ -146,6 +160,33 @@ impl Default for RoutingModel {
 
 fn default_level() -> u8 {
     100
+}
+
+fn default_gate_threshold() -> f32 {
+    -40.0
+}
+fn default_compressor_threshold() -> f32 {
+    -18.0
+}
+fn default_compressor_ratio() -> f32 {
+    3.0
+}
+fn default_limiter_ceiling() -> f32 {
+    -1.0
+}
+
+#[cfg(test)]
+mod fx_tests {
+    use super::FxChain;
+
+    #[test]
+    fn fx_defaults_are_safe_for_legacy_routing_files() {
+        let fx: FxChain = serde_json::from_str("{}").expect("legacy FX");
+        assert_eq!(fx.gate_threshold_db, -40.0);
+        assert_eq!(fx.compressor_threshold_db, -18.0);
+        assert_eq!(fx.compressor_ratio, 3.0);
+        assert_eq!(fx.limiter_ceiling_db, -1.0);
+    }
 }
 fn default_true() -> bool {
     true
@@ -222,6 +263,7 @@ impl RoutingModel {
                 id: b.name.clone(),
                 label: b.label.clone(),
                 icon: b.icon.clone(),
+                icon_color: b.icon_color.clone(),
                 volume_percent: b.volume_percent,
                 muted: b.muted,
                 output_bindings: if b.name == "sink_stream" {

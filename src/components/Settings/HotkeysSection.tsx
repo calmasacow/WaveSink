@@ -7,9 +7,6 @@ import { Ms } from "../Icons";
 const ICONS: Record<string, string> = {
   "profile.next": "skip_next",
   "profile.prev": "skip_previous",
-  "balance.a": "keyboard_arrow_left",
-  "balance.b": "keyboard_arrow_right",
-  "balance.center": "vertical_align_center",
 };
 
 const MODIFIER_CODES = new Set([
@@ -87,11 +84,6 @@ export function HotkeysSection({ onError }: Readonly<{ onError: (e: string) => v
     return () => window.removeEventListener("keydown", onKey, true);
   }, [capturing, refresh, onError]);
 
-  const setStep = (step: number) => {
-    void invoke("set_balance_step", { step })
-      .then(refresh)
-      .catch((e) => onError(String(e)));
-  };
   const configure = () => {
     void invoke("configure_hotkeys")
       .then(refresh)
@@ -117,7 +109,7 @@ export function HotkeysSection({ onError }: Readonly<{ onError: (e: string) => v
             </div>
           </div>
         )}
-        {status.shortcuts.map((s) => (
+        {status.shortcuts.filter((s) => !s.id.startsWith("balance.")).map((s) => (
           <div className="row row-compact" key={s.id}>
             <Ms name={ICONS[s.id] ?? "keyboard"} className="row-compact-icon" />
             <div className="rmain">
@@ -154,29 +146,6 @@ export function HotkeysSection({ onError }: Readonly<{ onError: (e: string) => v
             </button>
           </div>
         )}
-        <div className="row">
-          <div className="ricon">
-            <Ms name="swap_horiz" />
-          </div>
-          <div className="rmain">
-            <div className="rtitle">Balance step</div>
-            <div className="rsub">Percentage points the balance moves per press</div>
-          </div>
-          <div className="seg" role="radiogroup" aria-label="Balance step">
-            {status.steps.map((v) => (
-              <button
-                type="button"
-                key={v}
-                role="radio"
-                aria-checked={v === status.balance_step}
-                className={"seg-btn" + (v === status.balance_step ? " active" : "")}
-                onClick={() => setStep(v)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </>
   );

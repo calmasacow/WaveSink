@@ -373,6 +373,10 @@ impl AudioBackend for PactlBackend {
         ))
     }
 
+    fn remove_hardware_input(&self, _id: &str) -> Result<(), SinkError> {
+        Ok(())
+    }
+
     fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
         Err(SinkError::Config(
             "mic-in-mix requires the native PipeWire backend".into(),

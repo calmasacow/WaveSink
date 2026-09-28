@@ -46,6 +46,8 @@ interface MixerStore {
   setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
   setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
   setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
+  updateHardwareInput: (inputId: string, label: string, icon: string, iconColor: string, sourceName: string) => Promise<boolean>;
+  removeHardwareInput: (inputId: string) => Promise<boolean>;
   addHardwareInput: (sourceName: string, label: string, icon: string | null, iconColor: string | null) => Promise<boolean>;
   channels: VirtualSink[];
   appStreams: AppStream[];
@@ -109,12 +111,14 @@ interface MixerStore {
   /** Persist the current strip order (called on drag end). */
   commitChannelOrder: () => Promise<void>;
   setChannelIcon: (sinkName: string, icon: string) => Promise<void>;
+  setChannelIconColor: (sinkName: string, iconColor: string) => Promise<void>;
   /** User-defined mixes (record buses). */
   buses: BusDef[];
   fetchBuses: () => Promise<void>;
   addBus: (label: string) => Promise<void>;
   renameBus: (name: string, label: string) => Promise<void>;
   setBusIcon: (name: string, icon: string) => Promise<void>;
+  setBusIconColor: (name: string, iconColor: string) => Promise<void>;
   removeBus: (name: string) => Promise<void>;
   setBusMembers: (name: string, channels: string[]) => Promise<void>;
   /** Manual vs auto-include mode (carried set preserved). */
@@ -153,12 +157,6 @@ interface MixerStore {
   finishOnboarding: (blank: boolean) => Promise<void>;
   /** Reopen the tutorial (view-only - no starting-point choice). */
   replayOnboarding: () => void;
-  /** Balance slider channel picks (null = auto Game/Chat or first two). */
-  balanceA: string | null;
-  balanceB: string | null;
-  setBalanceChannels: (a: string | null, b: string | null) => Promise<void>;
-  showBalance: boolean;
-  setBalanceVisible: (visible: boolean) => Promise<void>;
 
   /** Create the virtual sinks and load initial state. */
   initialize: () => Promise<void>;
@@ -209,6 +207,17 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try { await invoke("set_input_level", { inputId, volumePercent: volume, muted }); }
     catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
   },
+  updateHardwareInput: async (inputId, label, icon, iconColor, sourceName) => {
+    try {
+      await invoke("update_hardware_input", { inputId, label, icon, iconColor, sourceName });
+      await get().fetchRouting();
+      return true;
+    } catch (e) { set({ error: String(e) }); return false; }
+  },
+  removeHardwareInput: async (inputId) => {
+    try { await invoke("remove_hardware_input", { inputId }); await get().fetchRouting(); return true; }
+    catch (e) { set({ error: String(e) }); return false; }
+  },
   addHardwareInput: async (sourceName, label, icon, iconColor) => {
     try {
       await invoke("add_hardware_input", { sourceName, label, icon, iconColor });
@@ -256,28 +265,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   replayOnboarding: () => set({ showOnboarding: true, onboardingReplay: true }),
 
-  balanceA: null,
-  balanceB: null,
-  showBalance: true,
-
-  setBalanceChannels: async (a, b) => {
-    set({ balanceA: a, balanceB: b });
-    try {
-      await invoke("set_balance_channels", { a, b });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
-  setBalanceVisible: async (visible) => {
-    set({ showBalance: visible });
-    try {
-      await invoke("set_balance_visible", { visible });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
   finishOnboarding: async (blank) => {
     const replay = get().onboardingReplay;
     set({ showOnboarding: false, onboardingReplay: false });
@@ -311,12 +298,8 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         .catch(() => {});
       void invoke<{
         onboarded: boolean;
-        balance_a: string | null;
-        balance_b: string | null;
-        show_balance: boolean;
       }>("get_prefs")
         .then((p) => {
-          set({ balanceA: p.balance_a, balanceB: p.balance_b, showBalance: p.show_balance });
           if (!p.onboarded) set({ showOnboarding: true });
         })
         .catch(() => {});
@@ -678,9 +661,11 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }));
     try {
       await invoke("rename_bus", { name, label });
+      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
       await get().fetchBuses();
+      await get().fetchRouting();
     }
   },
   setBusIcon: async (name, icon) => {
@@ -688,13 +673,20 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try { await invoke("set_bus_icon", { name, icon }); await get().fetchRouting(); }
     catch (e) { set({ error: String(e) }); await get().fetchBuses(); }
   },
+  setBusIconColor: async (name, iconColor) => {
+    set((s) => ({ buses: s.buses.map((bus) => bus.name === name ? { ...bus, icon_color: iconColor } : bus) }));
+    try { await invoke("set_bus_icon_color", { name, iconColor }); await get().fetchRouting(); }
+    catch (e) { set({ error: String(e) }); await get().fetchBuses(); await get().fetchRouting(); }
+  },
 
   removeBus: async (name) => {
     try {
       await invoke("remove_bus", { name });
       await get().fetchBuses();
+      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
+      await get().fetchRouting();
     }
   },
 
@@ -807,9 +799,11 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }));
     try {
       await invoke("set_bus_mute", { name, muted });
+      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
       await get().fetchBuses();
+      await get().fetchRouting();
     }
   },
 
@@ -836,6 +830,11 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       await get().fetchChannels();
     }
+  },
+  setChannelIconColor: async (sinkName, iconColor) => {
+    set((s) => ({ channels: s.channels.map((channel) => channel.name === sinkName ? { ...channel, icon_color: iconColor } : channel) }));
+    try { await invoke("set_channel_icon_color", { sinkName, iconColor }); }
+    catch (e) { set({ error: String(e) }); await get().fetchChannels(); }
   },
 
   renameChannel: async (sinkName, label) => {

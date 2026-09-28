@@ -168,6 +168,20 @@ impl Channels {
         Ok(())
     }
 
+    pub fn set_icon_color(
+        &mut self,
+        name: &str,
+        icon_color: Option<String>,
+    ) -> Result<(), SinkError> {
+        let def = self
+            .channels
+            .iter_mut()
+            .find(|c| c.name == name)
+            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))?;
+        def.icon_color = icon_color;
+        Ok(())
+    }
+
     /// Record a channel's fader position so it survives a restart. Unknown
     /// channels are ignored, not erroring - this runs on every fader tick.
     pub fn set_volume(&mut self, name: &str, volume_percent: u8) {

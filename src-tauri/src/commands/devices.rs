@@ -337,11 +337,22 @@ pub fn init_virtual_devices(
             .map(|mut mix| {
                 if let Some(saved) = mixer.routing.mixes.iter().find(|saved| saved.id == mix.id) {
                     mix.icon = saved.icon.clone();
+                    mix.icon_color = saved.icon_color.clone();
+                    mix.muted = saved.muted;
                     mix.output_bindings = saved.output_bindings.clone();
                 }
                 mix
             })
             .collect();
+        let mix_mutes = mixer
+            .routing
+            .mixes
+            .iter()
+            .map(|mix| (mix.id.clone(), mix.muted))
+            .collect::<Vec<_>>();
+        for (id, muted) in mix_mutes {
+            let _ = mixer.buses.set_muted(&id, muted);
+        }
         for (input, cells) in legacy.routes {
             let target = mixer.routing.routes.entry(input).or_default();
             for (mix, cell) in cells {

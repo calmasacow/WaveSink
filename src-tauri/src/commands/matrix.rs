@@ -6,6 +6,8 @@ use crate::state::AppState;
 /// Legacy buses own membership and levels while the graph migration runs.
 /// Matrix-only fields must survive that projection on every read.
 fn project_legacy(model: &mut RoutingModel, legacy: &RoutingModel) {
+    let saved_inputs = model.inputs.clone();
+    let saved_mixes = model.mixes.clone();
     let extras = model
         .inputs
         .iter()
@@ -26,11 +28,43 @@ fn project_legacy(model: &mut RoutingModel, legacy: &RoutingModel) {
         .map(|mut mix| {
             if let Some(saved) = model.mixes.iter().find(|saved| saved.id == mix.id) {
                 mix.icon = saved.icon.clone();
+                // Old routing files have no mix color. Preserve the normalized
+                // bus default instead of replacing it with a missing value.
+                mix.icon_color = saved.icon_color.clone().or(mix.icon_color);
                 mix.output_bindings = saved.output_bindings.clone();
             }
             mix
         })
         .collect();
+    sort_by_saved_order(&mut model.inputs, &legacy.inputs, &saved_inputs);
+    sort_by_saved_order(&mut model.mixes, &legacy.mixes, &saved_mixes);
+}
+
+fn sort_by_saved_order<T>(items: &mut [T], legacy: &[T], saved: &[T])
+where
+    T: HasId,
+{
+    items.sort_by_key(|item| {
+        saved
+            .iter()
+            .position(|saved| saved.id() == item.id())
+            .or_else(|| legacy.iter().position(|legacy| legacy.id() == item.id()))
+            .unwrap_or(usize::MAX)
+    });
+}
+
+trait HasId {
+    fn id(&self) -> &str;
+}
+impl HasId for InputDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+impl HasId for crate::routing_model::MixDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 /// Return the matrix projection used by the routing-table UI and future
@@ -51,6 +85,44 @@ pub fn get_routing_model(state: State<'_, AppState>) -> Result<RoutingModel, Str
     Ok(model)
 }
 
+fn reorder<T: HasId>(items: &mut Vec<T>, order: &[String]) -> Result<(), String> {
+    if order.len() != items.len()
+        || order
+            .iter()
+            .any(|id| !items.iter().any(|item| item.id() == id))
+        || order.iter().collect::<std::collections::HashSet<_>>().len() != order.len()
+    {
+        return Err("order must list every item exactly once".into());
+    }
+    items.sort_by_key(|item| {
+        order
+            .iter()
+            .position(|id| id == item.id())
+            .expect("validated")
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_matrix_inputs(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    reorder(&mut mixer.routing.inputs, &order)?;
+    for (index, input) in mixer.routing.inputs.iter_mut().enumerate() {
+        input.order = index as u32;
+    }
+    mixer.routing.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_matrix_mixes(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    reorder(&mut mixer.routing.mixes, &order)?;
+    for (index, mix) in mixer.routing.mixes.iter_mut().enumerate() {
+        mix.order = index as u32;
+    }
+    mixer.routing.save().map_err(|e| e.to_string())
+}
+
 /// Add a hardware source to the matrix. It remains present while disconnected
 /// so its saved sends can be restored when PipeWire reports it again.
 #[tauri::command]
@@ -65,6 +137,9 @@ pub fn add_hardware_input(
         .backend
         .list_input_devices()
         .map_err(|e| e.to_string())?;
+    if crate::audio::types::is_own_sink(&source_name) {
+        return Err("WaveSink virtual sources cannot be hardware inputs".into());
+    }
     if !devices.iter().any(|device| device.name == source_name) {
         return Err("hardware input is no longer available".into());
     }
@@ -242,6 +317,94 @@ pub fn set_input_level(
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Update presentation and source binding for a matrix hardware input. Routes,
+/// processing, and level state stay attached to the stable input id.
+#[tauri::command]
+pub fn update_hardware_input(
+    state: State<'_, AppState>,
+    input_id: String,
+    label: String,
+    icon: Option<String>,
+    icon_color: Option<String>,
+    source_name: String,
+) -> Result<(), String> {
+    let devices = state
+        .backend
+        .list_input_devices()
+        .map_err(|e| e.to_string())?;
+    if crate::audio::types::is_own_sink(&source_name) {
+        return Err("WaveSink virtual sources cannot be hardware inputs".into());
+    }
+    if !devices.iter().any(|device| device.name == source_name) {
+        return Err("hardware input is no longer available".into());
+    }
+    let label = label.trim();
+    if label.is_empty() || label.len() > 24 {
+        return Err("input label must be 1-24 characters".into());
+    }
+    let (volume, muted) = {
+        let mut mixer = state.lock_mixer()?;
+        if mixer.routing.inputs.iter().any(|input| {
+            input.id != input_id
+                && input.kind == InputKind::Hardware
+                && input.source_name == source_name
+        }) {
+            return Err("hardware input is already in the matrix".into());
+        }
+        let input = mixer
+            .routing
+            .inputs
+            .iter_mut()
+            .find(|input| input.id == input_id)
+            .filter(|input| input.kind == InputKind::Hardware)
+            .ok_or_else(|| format!("unknown hardware input {input_id}"))?;
+        input.label = label.to_string();
+        input.icon = icon;
+        input.icon_color = icon_color;
+        input.source_name = source_name.clone();
+        let level = (input.volume_percent, input.muted);
+        mixer.routing.save().map_err(|e| e.to_string())?;
+        crate::commands::profiles::autosave_active(&mixer);
+        level
+    };
+    state
+        .backend
+        .set_hardware_input(&input_id, &source_name, volume, muted)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_hardware_input(state: State<'_, AppState>, input_id: String) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    mixer
+        .routing
+        .inputs
+        .iter()
+        .find(|input| input.id == input_id)
+        .filter(|input| input.kind == InputKind::Hardware)
+        .cloned()
+        .ok_or_else(|| format!("unknown hardware input {input_id}"))?;
+    mixer.routing.inputs.retain(|item| item.id != input_id);
+    mixer.routing.routes.remove(&input_id);
+    mixer.buses.remove_channel(&input_id);
+    if input_id == "sink_mic" {
+        mixer.mic.enabled = false;
+        crate::persistence::mic::save(&mixer.mic).map_err(|e| e.to_string())?;
+        state
+            .backend
+            .set_mic_config(&mixer.mic)
+            .map_err(|e| e.to_string())?;
+    }
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    mixer.buses.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    drop(mixer);
+    state
+        .backend
+        .remove_hardware_input(&input_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -90,6 +90,28 @@ pub fn set_bus_icon(state: State<'_, AppState>, name: String, icon: String) -> R
     defs.save().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn set_bus_icon_color(
+    state: State<'_, AppState>,
+    name: String,
+    icon_color: String,
+) -> Result<(), String> {
+    let defs = {
+        let mut mixer = state.lock_mixer()?;
+        mixer
+            .buses
+            .set_icon_color(&name, icon_color.clone())
+            .map_err(|e| e.to_string())?;
+        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
+            mix.icon_color = Some(icon_color);
+            mixer.routing.save().map_err(|e| e.to_string())?;
+        }
+        crate::commands::profiles::autosave_active(&mixer);
+        mixer.buses.clone()
+    };
+    defs.save().map_err(|e| e.to_string())
+}
+
 pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<(), String> {
     let _rebuild = state.lock_bus_rebuild();
     let (def, defs, prefs, all) = {
@@ -432,6 +454,10 @@ pub fn set_bus_mute(state: State<'_, AppState>, name: String, muted: bool) -> Re
             .buses
             .set_muted(&name, muted)
             .map_err(|e| e.to_string())?;
+        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
+            mix.muted = muted;
+            mixer.routing.save().map_err(|e| e.to_string())?;
+        }
         crate::commands::profiles::autosave_active(&mixer);
         mixer.buses.clone()
     };
