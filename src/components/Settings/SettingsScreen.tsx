@@ -79,7 +79,7 @@ function engineDesc(native: boolean | null): string {
 }
 
 export function SettingsScreen() {
-  const { theme, setTheme } = useTheme();
+  const { theme, omarchy, setTheme } = useTheme();
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [startMinimized, setStartMinimized] = useState(false);
   const [backendNative, setBackendNative] = useState<boolean | null>(null);
@@ -161,6 +161,21 @@ export function SettingsScreen() {
               <div className="rsub">Match the app to your desktop</div>
             </div>
             <div className="theme-picker">
+              {omarchy && (
+                <button
+                  type="button"
+                  className={"theme-swatch" + (theme === "omarchy" ? " active" : "")}
+                  onClick={() => setTheme("omarchy")}
+                  title={`Follow Omarchy: ${omarchy.name}`}
+                >
+                  <span className="theme-swatch-colors">
+                    <i style={{ background: omarchy.colors.background }} />
+                    <i style={{ background: omarchy.colors.accent }} />
+                    <i style={{ background: omarchy.colors.bright_foreground }} />
+                  </span>
+                  <span className="theme-swatch-label">Omarchy</span>
+                </button>
+              )}
               {THEMES.map((t) => (
                 <button
                   key={t.id}

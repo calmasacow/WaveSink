@@ -13,6 +13,7 @@ describe("theme", () => {
   beforeEach(() => {
     localStorage.clear();
     delete document.documentElement.dataset.theme;
+    useTheme.setState({ theme: "original", omarchy: null });
   });
 
   it("every theme carries a label and three swatch colours", () => {
@@ -49,5 +50,25 @@ describe("theme", () => {
 
     useTheme.getState().setTheme("original");
     expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it("uses a detected Omarchy palette when selected", () => {
+    useTheme.setState({
+      omarchy: {
+        name: "tokyo-night",
+        colors: {
+          accent: "#7aa2f7",
+          background: "#1a1b26",
+          foreground: "#a9b1d6",
+          bright_foreground: "#c0caf5",
+          red: "#f7768e",
+          yellow: "#e0af68",
+          green: "#9ece6a",
+        },
+      },
+    });
+    useTheme.getState().setTheme("omarchy");
+    expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7aa2f7");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("omarchy");
   });
 });

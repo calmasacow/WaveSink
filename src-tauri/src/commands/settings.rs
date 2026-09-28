@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::fs;
+
 use serde::Serialize;
 use tauri::State;
 
@@ -11,10 +14,75 @@ pub struct BackendInfo {
     pub native: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct OmarchyTheme {
+    pub name: String,
+    pub colors: BTreeMap<String, String>,
+}
+
+fn parse_omarchy_colors(raw: &str) -> Option<BTreeMap<String, String>> {
+    let colors: BTreeMap<_, _> = raw
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim().trim_matches('"');
+            (value.len() == 7
+                && value.starts_with('#')
+                && value[1..].chars().all(|c| c.is_ascii_hexdigit()))
+            .then(|| (key.trim().to_owned(), value.to_owned()))
+        })
+        .collect();
+    [
+        "accent",
+        "background",
+        "foreground",
+        "bright_foreground",
+        "red",
+        "yellow",
+        "green",
+    ]
+    .iter()
+    .all(|key| colors.contains_key(*key))
+    .then_some(colors)
+}
+
+#[tauri::command]
+pub fn get_omarchy_theme() -> Option<OmarchyTheme> {
+    let state = dirs::home_dir()?.join(".local/state/omarchy/current");
+    let name = fs::read_to_string(state.join("theme.name")).ok()?;
+    let name = name.trim();
+    (!name.is_empty()
+        && name.len() <= 80
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+    .then_some(OmarchyTheme {
+        name: name.to_owned(),
+        colors: parse_omarchy_colors(&fs::read_to_string(state.join("theme/colors.toml")).ok()?)?,
+    })
+}
+
 #[tauri::command]
 pub fn get_backend_info(state: State<'_, AppState>) -> BackendInfo {
     BackendInfo {
         native: state.backend_native,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_omarchy_colors;
+
+    #[test]
+    fn parses_a_complete_omarchy_palette() {
+        let colors = parse_omarchy_colors(
+            "accent = \"#7aa2f7\"\nbackground = \"#1a1b26\"\nforeground = \"#a9b1d6\"\nbright_foreground = \"#c0caf5\"\nred = \"#f7768e\"\nyellow = \"#e0af68\"\ngreen = \"#9ece6a\"",
+        )
+        .expect("palette");
+        assert_eq!(colors["accent"], "#7aa2f7");
+    }
+
+    #[test]
+    fn rejects_incomplete_or_invalid_palettes() {
+        assert!(parse_omarchy_colors("accent = \"#nothex\"").is_none());
     }
 }
 

@@ -124,6 +124,7 @@ pub fn run() {
             commands::profiles::create_blank_profile,
             commands::profiles::get_active_profile,
             commands::settings::get_backend_info,
+            commands::settings::get_omarchy_theme,
             commands::settings::get_autostart,
             commands::settings::set_autostart,
             commands::settings::get_default_devices,
