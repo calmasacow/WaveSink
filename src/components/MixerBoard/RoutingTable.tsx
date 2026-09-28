@@ -51,6 +51,7 @@ export function RoutingTable() {
   const [editingMix, setEditingMix] = useState<string | null>(null);
   const [editingInput, setEditingInput] = useState<string | null>(null);
   const [editingEq, setEditingEq] = useState<string | null>(null);
+  const [editingFx, setEditingFx] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [inputOrder, setInputOrder] = useState<string[] | null>(null);
@@ -303,8 +304,8 @@ export function RoutingTable() {
                   <button
                     type="button"
                     className="wave-eq"
-                    onClick={() => (channel ? setEditingEq(input.id) : setEditingInput(input.id))}
-                    title="Equalizer"
+                    onClick={() => (channel ? setEditingEq(input.id) : setEditingFx(input.id))}
+                    title={channel ? "Equalizer" : "Audio FX"}
                   >
                     <Ms name="tune" />
                   </button>
@@ -480,6 +481,13 @@ export function RoutingTable() {
           channel={channels.find((channel) => channel.name === editingEq)!}
           open
           onClose={() => setEditingEq(null)}
+        />
+      )}
+      {editingFx && (
+        <AudioFxModal
+          input={inputs.find((input) => input.id === editingFx)!}
+          onClose={() => setEditingFx(null)}
+          onChange={(fx) => void setInputFx(editingFx, fx)}
         />
       )}
     </main>
@@ -846,7 +854,7 @@ function AudioFxModal({
   const fx = input.fx;
   const patch = (next: Partial<FxChain>) => onChange({ ...fx, ...next });
   return (
-    <Modal open onClose={onClose} title={`${input.label} Audio FX`}>
+    <Modal open onClose={onClose} title={`${input.label} Audio FX`} className="audio-fx-modal">
       <p className="modal-text">
         Settings save per input. Live hardware processing is not available yet.
       </p>

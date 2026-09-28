@@ -1537,6 +1537,9 @@ body,
   flex-direction: column;
   gap: var(--sp-4);
 }
+.modal.audio-fx-modal {
+  --modal-w: 760px;
+}
 /* Title row with the close affordance; flex: 0 0 auto so it survives the
    EQ panel turning its body into a flex column. */
 .modal-head {
