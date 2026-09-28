@@ -184,10 +184,14 @@ export function SettingsScreen() {
         <div className="section-label">Preferences</div>
         <div className="card" style={{ padding: "var(--sp-2)" }}>
           <div className="row">
-            <div className="ricon"><Ms name="label" /></div>
+            <div className="ricon">
+              <Ms name="label" />
+            </div>
             <div className="rmain">
               <div className="rtitle">Device naming</div>
-              <div className="rsub">System audio pickers show every virtual device as Name (WaveSink)</div>
+              <div className="rsub">
+                System audio pickers show every virtual device as Name (WaveSink)
+              </div>
             </div>
           </div>
           <DeviceRow

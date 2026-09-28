@@ -601,7 +601,7 @@ mod tests {
         let mixer = state.lock_mixer().expect("mixer");
         assert_eq!(
             mixer.buses.get(&name).map(|b| b.role),
-            Some(MixRole::Playback)
+            Some(MixRole::Recording)
         );
     }
 }

@@ -109,27 +109,29 @@ export function HotkeysSection({ onError }: Readonly<{ onError: (e: string) => v
             </div>
           </div>
         )}
-        {status.shortcuts.filter((s) => !s.id.startsWith("balance.")).map((s) => (
-          <div className="row row-compact" key={s.id}>
-            <Ms name={ICONS[s.id] ?? "keyboard"} className="row-compact-icon" />
-            <div className="rmain">
-              <div className="rtitle">{s.description}</div>
+        {status.shortcuts
+          .filter((s) => !s.id.startsWith("balance."))
+          .map((s) => (
+            <div className="row row-compact" key={s.id}>
+              <Ms name={ICONS[s.id] ?? "keyboard"} className="row-compact-icon" />
+              <div className="rmain">
+                <div className="rtitle">{s.description}</div>
+              </div>
+              {status.backend === "x11" ? (
+                <button
+                  type="button"
+                  className={"kbd kbd-btn" + (s.trigger ? "" : " kbd-unbound")}
+                  onClick={() => setCapturing(capturing === s.id ? null : s.id)}
+                >
+                  {capturing === s.id ? "Press keys…" : s.trigger || "Not bound"}
+                </button>
+              ) : (
+                <span className={"kbd" + (s.trigger ? "" : " kbd-unbound")}>
+                  {s.trigger || "Not bound"}
+                </span>
+              )}
             </div>
-            {status.backend === "x11" ? (
-              <button
-                type="button"
-                className={"kbd kbd-btn" + (s.trigger ? "" : " kbd-unbound")}
-                onClick={() => setCapturing(capturing === s.id ? null : s.id)}
-              >
-                {capturing === s.id ? "Press keys…" : s.trigger || "Not bound"}
-              </button>
-            ) : (
-              <span className={"kbd" + (s.trigger ? "" : " kbd-unbound")}>
-                {s.trigger || "Not bound"}
-              </span>
-            )}
-          </div>
-        ))}
+          ))}
         {status.backend === "portal" && (
           <div className="row">
             <div className="ricon">

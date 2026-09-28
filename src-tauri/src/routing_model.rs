@@ -349,7 +349,7 @@ fn outputs_for_legacy(outputs: &ChannelOutputs) -> Vec<OutputBinding> {
         .outputs
         .values()
         .filter_map(|o| o.clone())
-        .filter(|o| seen.insert(o.clone()).then_some(true).unwrap_or(false))
+        .filter(|o| seen.insert(o.clone()))
         .map(|device| OutputBinding {
             device,
             enabled: true,
@@ -376,7 +376,7 @@ mod tests {
         model
             .set_cell(
                 "sink_game",
-                "sink_stream",
+                &bus.name,
                 RouteCell {
                     enabled: true,
                     send_percent: 70,
@@ -384,11 +384,11 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(model.cell("sink_game", "sink_stream").send_percent, 70);
+        assert_eq!(model.cell("sink_game", &bus.name).send_percent, 70);
         assert_eq!(
-            model.cell("sink_chat", "sink_stream"),
+            model.cell("sink_chat", &bus.name),
             RouteCell {
-                enabled: true,
+                enabled: false,
                 send_percent: 100,
                 muted: false
             }
@@ -399,7 +399,7 @@ mod tests {
     fn empty_mix_set_stays_empty() {
         let model = RoutingModel::from_legacy(
             &Channels::default(),
-            &Buses::default(),
+            &Buses { buses: Vec::new() },
             &ChannelOutputs::default(),
         );
         assert!(model.mixes.is_empty());

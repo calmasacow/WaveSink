@@ -59,7 +59,15 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
 
   return (
     <div className={"strip bus-strip" + (muted ? " muted" : "")}>
-      <button type="button" className="strip-x" aria-label={`Delete mix ${bus.label}`} title="Delete mix" onClick={() => setConfirmingDelete(true)}><Ms name="close" /></button>
+      <button
+        type="button"
+        className="strip-x"
+        aria-label={`Delete mix ${bus.label}`}
+        title="Delete mix"
+        onClick={() => setConfirmingDelete(true)}
+      >
+        <Ms name="close" />
+      </button>
       <button
         type="button"
         className="strip-pop"
@@ -100,9 +108,23 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
             >
               <span className="menu-item-label">Microphone</span>
             </MenuCheckItem>
-            {channels.map((c) => <MenuCheckItem key={c.name} checked={carried.includes(c.name)} onClick={() => toggleMember(c.name)}><span className="menu-item-label">{c.label}</span></MenuCheckItem>)}
+            {channels.map((c) => (
+              <MenuCheckItem
+                key={c.name}
+                checked={carried.includes(c.name)}
+                onClick={() => toggleMember(c.name)}
+              >
+                <span className="menu-item-label">{c.label}</span>
+              </MenuCheckItem>
+            ))}
             <div className="menu-div" />
-            <MenuCheckItem checked={bus.exclude} title="New channels join automatically" onClick={() => void setBusExclude(bus.name, !bus.exclude)}><span className="menu-item-label">Auto-include new channels</span></MenuCheckItem>
+            <MenuCheckItem
+              checked={bus.exclude}
+              title="New channels join automatically"
+              onClick={() => void setBusExclude(bus.name, !bus.exclude)}
+            >
+              <span className="menu-item-label">Auto-include new channels</span>
+            </MenuCheckItem>
             <div className="menu-div" />
             <MenuItem
               icon="open_in_new"

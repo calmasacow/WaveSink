@@ -19,8 +19,8 @@ export function TitleBar({ screen }: Readonly<{ screen: string }>) {
 
   return (
     <header data-tauri-drag-region className="headerbar">
-        <div data-tauri-drag-region className="hb-brand">
-          <img className="hb-logo" src={appIcon} alt="" />
+      <div data-tauri-drag-region className="hb-brand">
+        <img className="hb-logo" src={appIcon} alt="" />
         <div data-tauri-drag-region className="hb-title">
           WaveSink
         </div>

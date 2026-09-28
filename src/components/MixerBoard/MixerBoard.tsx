@@ -177,11 +177,7 @@ export function MixerBoard() {
               label="Mixes"
               count={`${buses.length}`}
               hint="Recordable copies of your channels - add as an audio input in OBS"
-              onAdd={
-                buses.length < MAX_BUSES
-                  ? () => setAddingMix(true)
-                  : undefined
-              }
+              onAdd={buses.length < MAX_BUSES ? () => setAddingMix(true) : undefined}
               addTitle="Add a mix"
             >
               {buses.map((bus) => (
@@ -220,7 +216,17 @@ export function MixerBoard() {
         </div>
         <div className="modal-label">Icon background</div>
         <div className="icon-color-grid">
-          {CHANNEL_COLORS.map((color) => <button type="button" key={color} className={"icon-color-choice icon-color-" + color + (color === channelColor ? " sel" : "")} onClick={() => setChannelColor(color)} aria-label={color} />)}
+          {CHANNEL_COLORS.map((color) => (
+            <button
+              type="button"
+              key={color}
+              className={
+                "icon-color-choice icon-color-" + color + (color === channelColor ? " sel" : "")
+              }
+              onClick={() => setChannelColor(color)}
+              aria-label={color}
+            />
+          ))}
         </div>
         <div className="modal-btns">
           <button

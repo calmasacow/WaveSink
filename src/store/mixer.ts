@@ -46,9 +46,20 @@ interface MixerStore {
   setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
   setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
   setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
-  updateHardwareInput: (inputId: string, label: string, icon: string, iconColor: string, sourceName: string) => Promise<boolean>;
+  updateHardwareInput: (
+    inputId: string,
+    label: string,
+    icon: string,
+    iconColor: string,
+    sourceName: string,
+  ) => Promise<boolean>;
   removeHardwareInput: (inputId: string) => Promise<boolean>;
-  addHardwareInput: (sourceName: string, label: string, icon: string | null, iconColor: string | null) => Promise<boolean>;
+  addHardwareInput: (
+    sourceName: string,
+    label: string,
+    icon: string | null,
+    iconColor: string | null,
+  ) => Promise<boolean>;
   channels: VirtualSink[];
   appStreams: AppStream[];
   /** Live VU levels; stays empty under the pactl fallback backend. */
@@ -183,52 +194,132 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       const routing = await invoke<RoutingModel>("get_routing_model");
       if (!jsonEqual(get().routing, routing)) set({ routing });
-    } catch (e) { set({ error: String(e) }); }
+    } catch (e) {
+      set({ error: String(e) });
+    }
   },
   setRouteCell: async (inputId, mixId, cell) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, routes: { ...s.routing.routes, [inputId]: { ...s.routing.routes[inputId], [mixId]: cell } } } : null }));
+    set((s) => ({
+      routing: s.routing
+        ? {
+            ...s.routing,
+            routes: {
+              ...s.routing.routes,
+              [inputId]: { ...s.routing.routes[inputId], [mixId]: cell },
+            },
+          }
+        : null,
+    }));
     try {
-      await invoke("set_route_cell", { inputId, mixId, enabled: cell.enabled, sendPercent: cell.send_percent, muted: cell.muted });
-    } catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+      await invoke("set_route_cell", {
+        inputId,
+        mixId,
+        enabled: cell.enabled,
+        sendPercent: cell.send_percent,
+        muted: cell.muted,
+      });
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchRouting();
+    }
   },
   setMixMonitor: async (mixId) => {
     set((s) => ({ routing: s.routing ? { ...s.routing, monitor_mix: mixId } : null }));
     try {
       await invoke(mixId ? "set_mix_monitor" : "clear_mix_monitor", mixId ? { mixId } : {});
-    } catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchRouting();
+    }
   },
   setInputFx: async (inputId, fx) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, inputs: s.routing.inputs.map((input) => input.id === inputId ? { ...input, fx } : input) } : null }));
-    try { await invoke("set_input_fx", { inputId, fx }); }
-    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+    set((s) => ({
+      routing: s.routing
+        ? {
+            ...s.routing,
+            inputs: s.routing.inputs.map((input) =>
+              input.id === inputId ? { ...input, fx } : input,
+            ),
+          }
+        : null,
+    }));
+    try {
+      await invoke("set_input_fx", { inputId, fx });
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchRouting();
+    }
   },
   setInputLevel: async (inputId, volume, muted) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, inputs: s.routing.inputs.map((input) => input.id === inputId ? { ...input, volume_percent: volume, muted } : input) } : null }));
-    try { await invoke("set_input_level", { inputId, volumePercent: volume, muted }); }
-    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+    set((s) => ({
+      routing: s.routing
+        ? {
+            ...s.routing,
+            inputs: s.routing.inputs.map((input) =>
+              input.id === inputId ? { ...input, volume_percent: volume, muted } : input,
+            ),
+          }
+        : null,
+    }));
+    try {
+      await invoke("set_input_level", { inputId, volumePercent: volume, muted });
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchRouting();
+    }
   },
   updateHardwareInput: async (inputId, label, icon, iconColor, sourceName) => {
     try {
       await invoke("update_hardware_input", { inputId, label, icon, iconColor, sourceName });
       await get().fetchRouting();
       return true;
-    } catch (e) { set({ error: String(e) }); return false; }
+    } catch (e) {
+      set({ error: String(e) });
+      return false;
+    }
   },
   removeHardwareInput: async (inputId) => {
-    try { await invoke("remove_hardware_input", { inputId }); await get().fetchRouting(); return true; }
-    catch (e) { set({ error: String(e) }); return false; }
+    try {
+      await invoke("remove_hardware_input", { inputId });
+      await get().fetchRouting();
+      return true;
+    } catch (e) {
+      set({ error: String(e) });
+      return false;
+    }
   },
   addHardwareInput: async (sourceName, label, icon, iconColor) => {
     try {
       await invoke("add_hardware_input", { sourceName, label, icon, iconColor });
       await get().fetchRouting();
       return true;
-    } catch (e) { set({ error: String(e) }); return false; }
+    } catch (e) {
+      set({ error: String(e) });
+      return false;
+    }
   },
   setMixOutputs: async (mixId, devices) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, mixes: s.routing.mixes.map((mix) => mix.id === mixId ? { ...mix, output_bindings: devices.map((device) => ({ device, enabled: true })) } : mix) } : null }));
-    try { await invoke("set_mix_outputs", { mixId, outputs: devices.map((device) => ({ device, enabled: true })) }); }
-    catch (e) { set({ error: String(e) }); await get().fetchRouting(); }
+    set((s) => ({
+      routing: s.routing
+        ? {
+            ...s.routing,
+            mixes: s.routing.mixes.map((mix) =>
+              mix.id === mixId
+                ? { ...mix, output_bindings: devices.map((device) => ({ device, enabled: true })) }
+                : mix,
+            ),
+          }
+        : null,
+    }));
+    try {
+      await invoke("set_mix_outputs", {
+        mixId,
+        outputs: devices.map((device) => ({ device, enabled: true })),
+      });
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchRouting();
+    }
   },
   channels: [],
   appStreams: [],
@@ -626,7 +717,12 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       await invoke("add_channel", { label, icon, iconColor });
       // Buses too: the master (and auto-include mixes) absorb the channel.
-      await Promise.all([get().fetchChannels(), get().fetchOutputs(), get().fetchBuses(), get().fetchRouting()]);
+      await Promise.all([
+        get().fetchChannels(),
+        get().fetchOutputs(),
+        get().fetchBuses(),
+        get().fetchRouting(),
+      ]);
       return true;
     } catch (e) {
       set({ error: String(e) });
@@ -669,14 +765,27 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }
   },
   setBusIcon: async (name, icon) => {
-    set((s) => ({ buses: s.buses.map((bus) => bus.name === name ? { ...bus, icon } : bus) }));
-    try { await invoke("set_bus_icon", { name, icon }); await get().fetchRouting(); }
-    catch (e) { set({ error: String(e) }); await get().fetchBuses(); }
+    set((s) => ({ buses: s.buses.map((bus) => (bus.name === name ? { ...bus, icon } : bus)) }));
+    try {
+      await invoke("set_bus_icon", { name, icon });
+      await get().fetchRouting();
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchBuses();
+    }
   },
   setBusIconColor: async (name, iconColor) => {
-    set((s) => ({ buses: s.buses.map((bus) => bus.name === name ? { ...bus, icon_color: iconColor } : bus) }));
-    try { await invoke("set_bus_icon_color", { name, iconColor }); await get().fetchRouting(); }
-    catch (e) { set({ error: String(e) }); await get().fetchBuses(); await get().fetchRouting(); }
+    set((s) => ({
+      buses: s.buses.map((bus) => (bus.name === name ? { ...bus, icon_color: iconColor } : bus)),
+    }));
+    try {
+      await invoke("set_bus_icon_color", { name, iconColor });
+      await get().fetchRouting();
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchBuses();
+      await get().fetchRouting();
+    }
   },
 
   removeBus: async (name) => {
@@ -832,9 +941,17 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }
   },
   setChannelIconColor: async (sinkName, iconColor) => {
-    set((s) => ({ channels: s.channels.map((channel) => channel.name === sinkName ? { ...channel, icon_color: iconColor } : channel) }));
-    try { await invoke("set_channel_icon_color", { sinkName, iconColor }); }
-    catch (e) { set({ error: String(e) }); await get().fetchChannels(); }
+    set((s) => ({
+      channels: s.channels.map((channel) =>
+        channel.name === sinkName ? { ...channel, icon_color: iconColor } : channel,
+      ),
+    }));
+    try {
+      await invoke("set_channel_icon_color", { sinkName, iconColor });
+    } catch (e) {
+      set({ error: String(e) });
+      await get().fetchChannels();
+    }
   },
 
   renameChannel: async (sinkName, label) => {

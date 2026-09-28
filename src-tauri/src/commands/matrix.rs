@@ -85,7 +85,7 @@ pub fn get_routing_model(state: State<'_, AppState>) -> Result<RoutingModel, Str
     Ok(model)
 }
 
-fn reorder<T: HasId>(items: &mut Vec<T>, order: &[String]) -> Result<(), String> {
+fn reorder<T: HasId>(items: &mut [T], order: &[String]) -> Result<(), String> {
     if order.len() != items.len()
         || order
             .iter()

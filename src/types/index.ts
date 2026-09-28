@@ -166,7 +166,12 @@ export interface FxChain {
   compressor_ratio: number;
   limiter_ceiling_db: number;
 }
-export const FX_DEFAULTS = { gate_threshold_db: -40, compressor_threshold_db: -18, compressor_ratio: 3, limiter_ceiling_db: -1 } as const;
+export const FX_DEFAULTS = {
+  gate_threshold_db: -40,
+  compressor_threshold_db: -18,
+  compressor_ratio: 3,
+  limiter_ceiling_db: -1,
+} as const;
 export interface RoutingInput {
   id: string;
   label: string;
@@ -179,7 +184,10 @@ export interface RoutingInput {
   fx: FxChain;
   order: number;
 }
-export interface OutputBinding { device: string; enabled: boolean }
+export interface OutputBinding {
+  device: string;
+  enabled: boolean;
+}
 export interface RoutingMix {
   id: string;
   label: string;
@@ -191,7 +199,11 @@ export interface RoutingMix {
   order: number;
   role: MixRole;
 }
-export interface RouteCell { enabled: boolean; send_percent: number; muted: boolean }
+export interface RouteCell {
+  enabled: boolean;
+  send_percent: number;
+  muted: boolean;
+}
 export interface RoutingModel {
   version: number;
   inputs: RoutingInput[];

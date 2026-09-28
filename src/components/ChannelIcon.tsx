@@ -1,7 +1,36 @@
 import type { CSSProperties } from "react";
 
-export const CHANNEL_ICON_IDS = ["game", "chat", "music", "system", "mic", "broadcast", "browser", "terminal", "star", "generic", "headphones", "public", "webcam", "camera", "forum"] as const;
-export const CHANNEL_COLORS = ["slate", "gray", "red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "blue", "purple"] as const;
+export const CHANNEL_ICON_IDS = [
+  "game",
+  "chat",
+  "music",
+  "system",
+  "mic",
+  "broadcast",
+  "browser",
+  "terminal",
+  "star",
+  "generic",
+  "headphones",
+  "public",
+  "webcam",
+  "camera",
+  "forum",
+] as const;
+export const CHANNEL_COLORS = [
+  "slate",
+  "gray",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "teal",
+  "cyan",
+  "blue",
+  "purple",
+] as const;
 type IconId = (typeof CHANNEL_ICON_IDS)[number];
 
 const paths: Record<IconId, string> = {
@@ -23,15 +52,45 @@ const paths: Record<IconId, string> = {
 };
 
 const legacyIds: Record<string, IconId> = {
-  sports_esports: "game", forum: "forum", music_note: "music", desktop_windows: "system", headphones: "headphones", globe: "public", public: "public",
+  sports_esports: "game",
+  forum: "forum",
+  music_note: "music",
+  desktop_windows: "system",
+  headphones: "headphones",
+  globe: "public",
+  public: "public",
 };
 
 export function channelIconId(id: string | null): IconId {
-  return legacyIds[id ?? ""] ?? (CHANNEL_ICON_IDS.includes(id as IconId) ? id as IconId : "generic");
+  return (
+    legacyIds[id ?? ""] ?? (CHANNEL_ICON_IDS.includes(id as IconId) ? (id as IconId) : "generic")
+  );
 }
 
-export function ChannelIcon({ id, color, style }: Readonly<{ id: string | null; color?: string | null; style?: CSSProperties }>) {
+export function ChannelIcon({
+  id,
+  color,
+  style,
+}: Readonly<{ id: string | null; color?: string | null; style?: CSSProperties }>) {
   const icon = channelIconId(id);
-  if (icon === "public") return <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}><span className="ms material-symbols-outlined">public</span></span>;
-  return <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={paths[icon]} /></svg></span>;
+  if (icon === "public")
+    return (
+      <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}>
+        <span className="ms material-symbols-outlined">public</span>
+      </span>
+    );
+  return (
+    <span className={`channel-svg-icon icon-color-${color ?? "blue"}`} style={style}>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={paths[icon]} />
+      </svg>
+    </span>
+  );
 }
