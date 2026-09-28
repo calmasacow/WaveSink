@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/WaveSink.png" alt="WaveSink" width="220">
+  <img src="assets/WaveSinkLogo.png" alt="WaveSink" width="220">
 </p>
 
 # WaveSink
@@ -45,8 +45,9 @@ routing, levels, and visual identity.
 - **Hardware inputs** - add physical sources to the matrix, then route each
   independently to any mix. Audio FX settings are saved per input.
 - **Profiles** - save and switch full layouts from the tray
-- **Themes** - Original, Tokyo Night, or Gruvbox Dark, to match
-  the rest of your desktop
+- **Themes** - Original, Tokyo Night, Gruvbox Dark, or the active Omarchy
+  palette. New Omarchy installs default to its live desktop palette; existing
+  selections and the built-in themes remain available everywhere.
 
 ![Equalizer](assets/EQ_ScreenShot.png)
 ![Apps](assets/App_selectScreenshot.png)
