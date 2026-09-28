@@ -2038,6 +2038,7 @@ body,
   color: var(--fg-secondary);
 }
 .wave-eq {
+  border: 1px solid var(--border);
   color: var(--accent-hover);
 }
 .wave-mute .ms,
@@ -2090,14 +2091,16 @@ body,
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-active);
-  color: var(--fg-secondary);
+  color: var(--accent-hover);
   cursor: pointer;
 }
 .wave-send-toggle .ms,
 .wave-send-mute .ms {
   font-size: 14px;
 }
-.wave-send-toggle:hover {
+.wave-send-toggle:hover,
+.wave-send-mute:hover:not(:disabled),
+.wave-send-mute.active:hover:not(:disabled) {
   background: var(--accent);
   color: var(--on-accent);
 }
