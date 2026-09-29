@@ -107,9 +107,6 @@ The routing contract is documented in [docs/routing-model.md](docs/routing-model
 On first launch after upgrading, old JSON files are backed up beside the new
 `routing.json`; see the migration notes there for the Sonar/old-sink mapping.
 
-For the current implementation status and an OpenCode-ready continuation plan,
-see [OPENCODE_HANDOFF.md](OPENCODE_HANDOFF.md).
-
 ## Contact
 
 For bugs, feature requests, or support, open a
