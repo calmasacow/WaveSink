@@ -57,6 +57,12 @@ Grab the latest from [WaveSink Releases](https://github.com/calmasacow/WaveSink/
 and install the file directly. WaveSink does not currently publish to AUR or
 COPR.
 
+**Arch / Omarchy**
+
+```bash
+sudo pacman -U ./wavesink-bin-*-x86_64.pkg.tar.zst
+```
+
 **Fedora / openSUSE**
 
 ```bash
@@ -67,12 +73,6 @@ sudo dnf install ./wavesink-*.x86_64.rpm
 
 ```bash
 sudo apt install ./wavesink_*_amd64.deb
-```
-
-**Arch / Manjaro / EndeavourOS**
-
-```bash
-sudo pacman -U ./wavesink-bin-*-x86_64.pkg.tar.zst
 ```
 
 These install the app properly - launcher entry, icon, uninstall
