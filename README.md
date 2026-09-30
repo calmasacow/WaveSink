@@ -53,41 +53,44 @@ routing, levels, and visual identity.
 
 ## Install
 
-Grab the latest from [WaveSink Releases](https://github.com/calmasacow/WaveSink/releases)
-and install the file directly. WaveSink does not currently publish to AUR or
+Each script fetches the newest stable release, verifies its SHA256SUMS entry,
+and installs it. Packages are for x86_64. WaveSink does not publish to AUR or
 COPR.
 
-**Arch / Omarchy**
+**Arch / Omarchy:**
 
 ```bash
-sudo pacman -U ./wavesink-bin-*-x86_64.pkg.tar.zst
+curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/arch.sh && bash arch.sh
 ```
 
-**Fedora / openSUSE**
+**Ubuntu 24.04 / 26.04 LTS, Linux Mint 22, Pop!_OS 24.04:**
 
 ```bash
-sudo dnf install ./wavesink-*.x86_64.rpm
+curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/ubuntu.sh && bash ubuntu.sh
 ```
 
-**Debian / Ubuntu / Mint**
+**Fedora 43 / 44:**
 
 ```bash
-sudo apt install ./wavesink_*_amd64.deb
+curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/fedora.sh && bash fedora.sh
 ```
 
-These install the app properly - launcher entry, icon, uninstall
-through your package manager.
-
-**Any other distro - AppImage (portable, no root)**
+**NixOS (user profile):**
 
 ```bash
-chmod +x wavesink_*_amd64.AppImage
-./wavesink_*_amd64.AppImage
+curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/nixos.sh && bash nixos.sh
 ```
 
-To get a launcher entry for an AppImage, use
-[Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or
-AppImageLauncher.
+**Other distros — portable AppImage, no root:**
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/appimage.sh && bash appimage.sh
+```
+
+Run `~/.local/share/AppImages/WaveSink.AppImage` afterward. For a launcher entry,
+use [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or AppImageLauncher.
+
+For manual downloads, see [Releases](https://github.com/calmasacow/WaveSink/releases).
 
 Requires PipeWire with `pipewire-pulse` and WirePlumber 0.5+ (the default
 on most current distros).

@@ -73,7 +73,8 @@ jobs:
               clang \
               squashfs-tools \
               zstd \
-              jq
+              jq \
+              xxd
           }
           apt_try || { sleep 30; apt_try; } || { sleep 120; apt_try; }
 
@@ -194,19 +195,37 @@ jobs:
               --notes "Rolling development build from the latest commit on main. Not a stable release - expect rough edges."
           else
             gh release create "$tag" --target "$GITHUB_SHA" --title "WaveSink $tag" \
-              --generate-notes --notes "Linux builds:
-          - **AppImage** - portable, run anywhere (\`chmod +x\` and go)
-          - **.deb** - Debian / Ubuntu and derivatives
-          - **.rpm** - Fedora / openSUSE and derivatives
-          - **.pkg.tar.zst** - Arch (\`sudo pacman -U\`)
+              --generate-notes --notes-file <(cat <<'NOTES'
+          **Linux x86_64 — install the newest stable release:**
 
-          Requires PipeWire with \`pipewire-pulse\` and WirePlumber 0.5+.
+          Arch / Omarchy:
+          ```bash
+          curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/arch.sh && bash arch.sh
+          ```
 
-          Every file above is checksummed in \`SHA256SUMS\` and carries a build
-          provenance attestation, so you can check where it came from:
-          \`\`\`
-          gh attestation verify wavesink_${{ steps.ver.outputs.version }}_amd64.deb --owner calmasacow
-          \`\`\`"
+          Ubuntu 24.04 / 26.04 LTS, Linux Mint 22, Pop!_OS 24.04:
+          ```bash
+          curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/ubuntu.sh && bash ubuntu.sh
+          ```
+
+          Fedora 43 / 44:
+          ```bash
+          curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/fedora.sh && bash fedora.sh
+          ```
+
+          NixOS (installs into your user profile):
+          ```bash
+          curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/nixos.sh && bash nixos.sh
+          ```
+
+          Other distros — portable AppImage:
+          ```bash
+          curl -fsSLO https://raw.githubusercontent.com/calmasacow/WaveSink/main/scripts/install/appimage.sh && bash appimage.sh
+          ```
+
+          Scripts fetch the latest stable release, verify its SHA256SUMS entry, then install. Requires PipeWire with pipewire-pulse and WirePlumber 0.5+.
+          NOTES
+          )
           fi
           # Checksums by basename so users can verify downloads; the archpkg job
           # appends its own line.
@@ -219,6 +238,21 @@ jobs:
             target/release/bundle/appimage/wavesink_*.AppImage \
             target/release/bundle/deb/*.deb \
             target/release/bundle/rpm/*.rpm
+
+      - name: Attach NixOS flake
+        if: steps.ver.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${{ steps.ver.outputs.version }}"
+          app="target/release/bundle/appimage/wavesink_${ver}_amd64.AppImage"
+          hash=$(sha256sum "$app" | cut -d' ' -f1 | xxd -r -p | base64 -w0)
+          sed -i "s/version = \"[0-9][0-9.]*\";/version = \"${ver}\";/; s|hash = \"sha256-[^\"]*\";|hash = \"sha256-${hash}\";|" flake.nix
+          grep -q "version = \"${ver}\";" flake.nix
+          grep -q "hash = \"sha256-${hash}\";" flake.nix
+          echo "$(sha256sum flake.nix | cut -d' ' -f1)  flake.nix" >> SHA256SUMS
+          gh release upload "v${ver}" --clobber flake.nix SHA256SUMS
 
   archpkg:
     name: Arch package
