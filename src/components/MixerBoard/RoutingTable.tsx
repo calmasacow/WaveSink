@@ -3,7 +3,13 @@ import type { PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMixerStore } from "../../store/mixer";
 import { gainDb, peakOf, sendGain, useMeter, useMeterConfig } from "../../lib/meters";
-import { FX_DEFAULTS, MAX_VOLUME, type FxChain, type RouteCell } from "../../types";
+import {
+  FX_DEFAULTS,
+  MAX_VOLUME,
+  SYSTEM_DEFAULT_OUTPUT,
+  type FxChain,
+  type RouteCell,
+} from "../../types";
 import { Ms } from "../Icons";
 import { Modal } from "../Modal";
 import { channelIconId, CHANNEL_COLORS, CHANNEL_ICON_IDS, ChannelIcon } from "../ChannelIcon";
@@ -516,7 +522,10 @@ function MixHeader({
 }>) {
   const { pro } = useMeterConfig();
   const count = mix.output_bindings.filter(
-    (binding) => binding.enabled && outputs.some((output) => output.name === binding.device),
+    (binding) =>
+      binding.enabled &&
+      (binding.device === SYSTEM_DEFAULT_OUTPUT ||
+        outputs.some((output) => output.name === binding.device)),
   ).length;
   const color = mix.muted ? "gray" : (mix.icon_color ?? "purple");
   return (
@@ -647,22 +656,26 @@ function EditMixModal({
       </div>
       <div className="modal-label">Outputs</div>
       <div className="edit-mix-outputs">
-        {outputs.map((output) => (
-          <label key={output.name}>
-            <input
-              type="checkbox"
-              checked={selected.includes(output.name)}
-              onChange={(event) =>
-                onOutputs(
-                  event.target.checked
-                    ? [...selected, output.name]
-                    : selected.filter((name) => name !== output.name),
-                )
-              }
-            />{" "}
-            {output.description}
-          </label>
-        ))}
+        {/* Channels reach speakers only through mixes; "System default" follows
+            whatever the desktop's default output is, e.g. headphones when plugged in. */}
+        {[{ name: SYSTEM_DEFAULT_OUTPUT, description: "System default" }, ...outputs].map(
+          (output) => (
+            <label key={output.name}>
+              <input
+                type="checkbox"
+                checked={selected.includes(output.name)}
+                onChange={(event) =>
+                  onOutputs(
+                    event.target.checked
+                      ? [...selected, output.name]
+                      : selected.filter((name) => name !== output.name),
+                  )
+                }
+              />{" "}
+              {output.description}
+            </label>
+          ),
+        )}
       </div>
       <div className="modal-btns">
         <button type="button" className="modal-btn danger" onClick={onDelete}>

@@ -55,7 +55,6 @@
         "replaces": ["sink"],
         "depends": [
           "libayatana-appindicator3-1",
-          "pulseaudio-utils",
           "pipewire-pulse",
           "wireplumber"
         ],
@@ -70,7 +69,6 @@
         "obsoletes": ["sink"],
         "depends": [
           "libayatana-appindicator3.so.1()(64bit)",
-          "pulseaudio-utils",
           "pipewire-pulseaudio",
           "wireplumber"
         ],

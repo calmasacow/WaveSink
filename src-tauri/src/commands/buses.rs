@@ -527,7 +527,7 @@ mod tests {
     use std::time::Duration;
 
     fn state_with_mix(backend: Arc<MockBackend>) -> (AppState, String) {
-        let state = AppState::new(backend, true);
+        let state = AppState::new(backend);
         let name = {
             let mut mixer = state.lock_mixer().expect("mixer");
             mixer.init_defaults();

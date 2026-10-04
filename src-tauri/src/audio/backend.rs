@@ -2,8 +2,8 @@ use crate::audio::types::{AppStream, EqConfig, OutputDevice};
 use crate::error::SinkError;
 use crate::routing_model::OutputBinding;
 
-/// Abstraction over the audio system (native PipeWire, pactl fallback);
-/// commands must only ever talk to this trait, never a concrete backend.
+/// Abstraction over the audio system (the native PipeWire backend, or a
+/// recording mock in tests); commands only ever talk to this trait.
 pub trait AudioBackend: Send + Sync {
     /// `label` is the human-readable device description shown by system mixers.
     fn create_virtual_sink(&self, name: &str, label: &str) -> Result<(), SinkError>;
@@ -30,31 +30,9 @@ pub trait AudioBackend: Send + Sync {
     fn move_stream_to_sink(&self, stream_index: u32, sink_name: &str) -> Result<(), SinkError>;
     fn set_app_volume(&self, stream_index: u32, volume_percent: u8) -> Result<(), SinkError>;
 
-    /// Route a channel to a physical output device. `None` means "follow the
-    /// system default" (with automatic failover).
-    fn set_channel_output(
-        &self,
-        sink_name: &str,
-        output_name: Option<&str>,
-    ) -> Result<(), SinkError>;
-
-    /// Turn a channel's auto-failover on or off. Off = stay on the chosen
-    /// device (or exact default) and go silent when it's gone, not fall back.
-    fn set_channel_failover(&self, _sink_name: &str, _enabled: bool) -> Result<(), SinkError> {
-        Ok(())
-    }
-
     /// Apply a channel's parametric EQ (insert/re-tune/remove the biquad
-    /// chain). Native-only: the pactl fallback has no in-graph insert point.
+    /// chain).
     fn set_channel_eq(&self, sink_name: &str, config: &EqConfig) -> Result<(), SinkError>;
-
-    /// Per-channel resolved output after explicit/default/fallback resolution,
-    /// so the UI can show what "System default" resolves to.
-    fn resolved_channel_outputs(
-        &self,
-    ) -> Result<std::collections::HashMap<String, Option<String>>, SinkError> {
-        Ok(std::collections::HashMap::new())
-    }
 
     /// Create a mix bus: a capturable virtual source whose label is the
     /// device name recorders (OBS) display. Native-only.

@@ -17,7 +17,6 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WindowEvent};
 
 use audio::backend::AudioBackend;
-use audio::pactl::PactlBackend;
 use audio::pw_native::levels::LevelStore;
 use audio::pw_native::PipeWireBackend;
 use state::AppState;
@@ -74,24 +73,65 @@ fn parse_set_mix_volume(argv: &[String]) -> Option<(String, u8)> {
     Some((name.clone(), volume))
 }
 
-pub fn run() {
-    // Fall back to pactl subprocess calls if the native PipeWire loop can't
-    // come up; real VU metering only works with the native backend.
-    let (backend, levels): (Arc<dyn AudioBackend>, Option<Arc<LevelStore>>) =
+/// How long startup waits for PipeWire before giving up.
+const PIPEWIRE_CONNECT_ATTEMPTS: u32 = 20;
+const PIPEWIRE_CONNECT_RETRY: Duration = Duration::from_millis(500);
+
+fn connect_pipewire() -> Result<PipeWireBackend, error::SinkError> {
+    let mut attempt = 1;
+    loop {
         match PipeWireBackend::new() {
-            Ok(backend) => {
-                let levels = backend.levels.clone();
-                (Arc::new(backend), Some(levels))
+            Ok(backend) => return Ok(backend),
+            Err(e) if attempt >= PIPEWIRE_CONNECT_ATTEMPTS => return Err(e),
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(PIPEWIRE_CONNECT_RETRY);
             }
-            Err(e) => {
-                eprintln!(
-                    "wavesink: native PipeWire backend unavailable ({e}); using pactl fallback"
-                );
-                (Arc::new(PactlBackend::new()), None)
-            }
-        };
-    let backend_native = levels.is_some();
-    let app_state = AppState::new(backend, backend_native);
+        }
+    }
+}
+
+/// Explain a missing audio engine in a dialog, then quit: a mixer that cannot
+/// reach PipeWire would only look like it works.
+fn show_engine_error(detail: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    let message = format!(
+        "WaveSink couldn't connect to PipeWire, so it can't route any audio.\n\n\
+         Make sure PipeWire and WirePlumber are running \
+         (systemctl --user status pipewire wireplumber), then start WaveSink again.\n\n\
+         Details: {detail}"
+    );
+    let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(move |app| {
+            let handle = app.handle().clone();
+            app.dialog()
+                .message(message.clone())
+                .title("WaveSink can't start")
+                .kind(MessageDialogKind::Error)
+                .show(move |_| handle.exit(1));
+            Ok(())
+        })
+        .run(tauri::generate_context!());
+    if let Err(e) = result {
+        eprintln!("wavesink: could not show the startup error: {e}");
+    }
+}
+
+pub fn run() {
+    // WaveSink is a PipeWire graph; without it there is nothing to run. At
+    // login PipeWire can still be starting, so give it a few seconds.
+    let backend = match connect_pipewire() {
+        Ok(backend) => backend,
+        Err(e) => {
+            eprintln!("wavesink: cannot connect to PipeWire: {e}");
+            show_engine_error(&e.to_string());
+            return;
+        }
+    };
+    let levels = backend.levels.clone();
+    let backend: Arc<dyn AudioBackend> = Arc::new(backend);
+    let app_state = AppState::new(backend);
 
     let result = tauri::Builder::default()
         // Must stay first: a second launch would spawn a duplicate fighting
@@ -123,11 +163,6 @@ pub fn run() {
             commands::devices::get_output_devices,
             commands::devices::init_virtual_devices,
             commands::devices::teardown_virtual_devices,
-            commands::devices::get_channel_outputs,
-            commands::devices::get_resolved_outputs,
-            commands::devices::get_channel_failover,
-            commands::devices::set_channel_failover,
-            commands::devices::set_channel_output,
             commands::apps::get_seen_apps,
             commands::apps::set_app_ignored,
             commands::apps::forget_app,
@@ -186,7 +221,6 @@ pub fn run() {
             commands::profiles::set_profile_trigger,
             commands::profiles::create_blank_profile,
             commands::profiles::get_active_profile,
-            commands::settings::get_backend_info,
             commands::settings::get_omarchy_theme,
             commands::settings::get_autostart,
             commands::settings::set_autostart,
@@ -223,9 +257,7 @@ pub fn run() {
                     let _ = window.show();
                 }
             }
-            if let Some(levels) = levels {
-                spawn_level_emitter(app.handle().clone(), levels);
-            }
+            spawn_level_emitter(app.handle().clone(), levels);
             persistence::wireplumber::remove_stale();
             spawn_route_enforcer(app.handle().clone());
             Ok(())
@@ -255,21 +287,10 @@ pub fn run() {
 /// native check is cheap enough to run this often.
 const ROUTE_ENFORCE_INTERVAL: Duration = Duration::from_millis(200);
 
-/// pactl forks two processes per check.
-const ROUTE_ENFORCE_INTERVAL_PACTL: Duration = Duration::from_secs(2);
-
-/// Longer than the UI's 2s poll; clock-based so a stalled webview is covered.
-const UI_POLL_GRACE: Duration = Duration::from_secs(5);
-
 /// Enforces assignments from the backend; the UI poll pauses in the tray.
 fn spawn_route_enforcer(handle: tauri::AppHandle) {
     std::thread::spawn(move || {
-        let native = handle.state::<AppState>().backend_native;
-        let interval = if native {
-            ROUTE_ENFORCE_INTERVAL
-        } else {
-            ROUTE_ENFORCE_INTERVAL_PACTL
-        };
+        let interval = ROUTE_ENFORCE_INTERVAL;
         let mut last_error: Option<String> = None;
         let mut failures: u32 = 0;
         loop {
@@ -280,9 +301,6 @@ fn spawn_route_enforcer(handle: tauri::AppHandle) {
             };
             std::thread::sleep(pause);
             let state = handle.state::<AppState>();
-            if !native && state.ui_polled_within(UI_POLL_GRACE) {
-                continue;
-            }
             match commands::devices::refresh_streams(state.inner()) {
                 Ok(_) => {
                     last_error = None;
@@ -300,7 +318,7 @@ fn spawn_route_enforcer(handle: tauri::AppHandle) {
     });
 }
 
-/// Streams per-channel peak levels to the UI at 10 Hz as `levels` events.
+/// Streams meter peak levels to the UI as `levels` events, at the meter rate.
 /// Peaks are drained (read-and-reset), so silence decays to zero.
 fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
     std::thread::spawn(move || {

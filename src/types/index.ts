@@ -200,6 +200,9 @@ export const UNASSIGNED = "";
 
 /** Unity: no level in WaveSink ever amplifies. */
 export const MAX_VOLUME = 100;
+/** Mix output binding that follows the desktop's default output device
+ *  (mirrors Rust SYSTEM_DEFAULT_OUTPUT). */
+export const SYSTEM_DEFAULT_OUTPUT = "@default";
 /** Node name of the always-on master mix (carries every channel). */
 export interface HotkeyShortcut {
   id: string;

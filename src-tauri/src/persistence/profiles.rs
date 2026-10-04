@@ -130,6 +130,7 @@ pub fn load(name: &str) -> Result<Profile, SinkError> {
     }
     profile.buses.clamp_loaded();
     profile.routing.clamp_levels();
+    profile.routing.ensure_an_output();
     Ok(profile)
 }
 

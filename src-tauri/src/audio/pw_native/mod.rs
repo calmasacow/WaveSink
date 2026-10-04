@@ -1,4 +1,4 @@
-//! Native PipeWire backend: replaces pactl subprocess calls with pipewire-rs.
+//! Native PipeWire backend (pipewire-rs): WaveSink's only audio engine.
 //! All PipeWire objects live on a dedicated loop thread; this facade sends
 //! commands over a channel and blocks on an mpsc reply with a timeout.
 
@@ -96,12 +96,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::ListOutputs { reply })
     }
 
-    fn resolved_channel_outputs(
-        &self,
-    ) -> Result<std::collections::HashMap<String, Option<String>>, SinkError> {
-        self.request(|reply| Cmd::ResolvedOutputs { reply })
-    }
-
     fn set_sink_volume(&self, sink_name: &str, volume_percent: u8) -> Result<(), SinkError> {
         let name = sink_name.to_string();
         self.request(|reply| Cmd::SetNodeVolumeByName {
@@ -139,29 +133,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::SetNodeVolumeById {
             id: stream_index,
             percent: volume_percent,
-            reply,
-        })
-    }
-
-    fn set_channel_output(
-        &self,
-        sink_name: &str,
-        output_name: Option<&str>,
-    ) -> Result<(), SinkError> {
-        let sink_name = sink_name.to_string();
-        let output_name = output_name.map(str::to_string);
-        self.request(|reply| Cmd::SetChannelOutput {
-            sink_name,
-            output_name,
-            reply,
-        })
-    }
-
-    fn set_channel_failover(&self, sink_name: &str, enabled: bool) -> Result<(), SinkError> {
-        let sink_name = sink_name.to_string();
-        self.request(|reply| Cmd::SetChannelFailover {
-            sink_name,
-            enabled,
             reply,
         })
     }

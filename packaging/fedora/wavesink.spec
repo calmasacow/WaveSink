@@ -25,7 +25,6 @@ BuildRequires:  gzip
 # libayatana-appindicator, a hard dep); linked libs are added automatically.
 Requires:       wireplumber
 Requires:       pipewire-pulseaudio
-Requires:       pulseaudio-utils
 Requires:       hicolor-icon-theme
 Requires:       libayatana-appindicator3.so.1()(64bit)
 

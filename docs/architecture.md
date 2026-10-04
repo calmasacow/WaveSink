@@ -13,8 +13,7 @@ Tauri commands / tray
           │     └── RoutingModel (new matrix state)
           │
           └── AudioBackend trait
-                    ├── PipeWireBackend ──► dedicated PipeWire loop thread
-                    └── PactlBackend     ──► fallback subprocess path
+                    └── PipeWireBackend ──► dedicated PipeWire loop thread
 ```
 
 The native backend owns PipeWire objects on one loop thread. Commands must
@@ -57,10 +56,10 @@ backend operation, and make failure recovery refresh the model from Rust.
 |---|---|
 | `channels.json` | Legacy software-input definitions and source fader state |
 | `buses.json` | Legacy mix definitions and native bus compatibility state |
-| `outputs.json` | Legacy channel output choices/failover |
+| `outputs.json` | Original Sink per-channel outputs; read only to migrate old setups (channels reach devices only through mixes) |
 | `eq.json` | Existing channel EQ configuration |
 | `profiles/*.json` | Profiles; now includes optional `routing` |
 | `routing.json` | New input×mix matrix contract |
 
 Keep the legacy files until the graph migration is complete. They are still
-used by older commands, profile compatibility, and the fallback backend.
+used by older commands and profile compatibility.

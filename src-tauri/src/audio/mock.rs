@@ -173,18 +173,8 @@ impl AudioBackend for MockBackend {
         Ok(())
     }
 
-    fn set_channel_output(&self, _sink_name: &str, _device: Option<&str>) -> Result<(), SinkError> {
-        Ok(())
-    }
-
     fn set_channel_eq(&self, _sink_name: &str, _config: &EqConfig) -> Result<(), SinkError> {
         Ok(())
-    }
-
-    fn resolved_channel_outputs(
-        &self,
-    ) -> Result<std::collections::HashMap<String, Option<String>>, SinkError> {
-        Ok(std::collections::HashMap::new())
     }
 
     fn create_bus(

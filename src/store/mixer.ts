@@ -15,7 +15,7 @@ import type {
 } from "../types";
 
 // Faders fire on every pointer move; debounce per target so a drag doesn't
-// spawn a pactl subprocess per pixel. UI state updates optimistically.
+// send a backend command per pixel. UI state updates optimistically.
 const pendingInvokes = new Map<string, number>();
 function debouncedInvoke(
   key: string,
@@ -63,23 +63,7 @@ interface MixerStore {
   appStreams: AppStream[];
   /** Physical output devices. */
   outputDevices: OutputDevice[];
-  /** Channel -> chosen output node name (null = follow system default). */
-  channelOutputs: Record<string, string | null>;
-  /**
-   * Channel -> the device node name it is actually routed to right now.
-   * Lets a follow-default strip show where audio really goes and reflects failover.
-   */
-  resolvedOutputs: Record<string, string | null>;
-  /**
-   * Channel -> whether it fails over to another device when its chosen device
-   * is gone. Defaults to on (absent treated as true).
-   */
-  channelFailover: Record<string, boolean>;
   fetchOutputs: () => Promise<void>;
-  setChannelOutput: (sinkName: string, outputName: string | null) => Promise<void>;
-  setChannelFailover: (sinkName: string, enabled: boolean) => Promise<void>;
-  /** Sonar-style "same device on all channels". */
-  setAllOutputs: (outputName: string | null) => Promise<void>;
   /** Channel -> parametric EQ (absent = never configured, i.e. default). */
   eqConfigs: Record<string, EqConfig>;
   fetchEq: () => Promise<void>;
@@ -144,14 +128,11 @@ interface MixerStore {
   toggleMonitor: (name: string) => Promise<void>;
   /** Name of the most recently saved/loaded profile this session. */
   activeProfile: string | null;
-  /** Fatal error surfaced to the UI (e.g. pactl missing, PipeWire down). */
+  /** Error surfaced to the UI (e.g. a command the backend rejected). */
   error: string | null;
   /** Dismiss the error banner. */
   clearError: () => void;
   initialized: boolean;
-  /** True on the native PipeWire backend; false on the pactl fallback
-   * (mixes/monitoring unavailable). Null until known. */
-  backendNative: boolean | null;
   /** First-run tutorial visible. */
   showOnboarding: boolean;
   /** True when the tutorial was reopened from Settings (no setup choice). */
@@ -316,9 +297,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   channels: [],
   appStreams: [],
   outputDevices: [],
-  channelOutputs: {},
-  resolvedOutputs: {},
-  channelFailover: {},
   inputDevices: [],
   seenApps: [],
   profiles: [],
@@ -326,7 +304,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   error: null,
   clearError: () => set({ error: null }),
   initialized: false,
-  backendNative: null,
   showOnboarding: false,
   onboardingReplay: false,
 
@@ -360,9 +337,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       await invoke("init_virtual_devices");
       set({ initialized: true, error: null });
-      void invoke<{ native: boolean }>("get_backend_info")
-        .then((i) => set({ backendNative: i.native }))
-        .catch(() => {});
       void invoke<{
         onboarded: boolean;
       }>("get_prefs")
@@ -476,51 +450,10 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   fetchOutputs: async () => {
     try {
-      const [outputDevices, channelOutputs, resolvedOutputs, channelFailover] = await Promise.all([
-        invoke<OutputDevice[]>("get_output_devices"),
-        invoke<Record<string, string | null>>("get_channel_outputs"),
-        invoke<Record<string, string | null>>("get_resolved_outputs"),
-        invoke<Record<string, boolean>>("get_channel_failover"),
-      ]);
-      const s = get();
-      const patch: Partial<MixerStore> = {};
-      if (!jsonEqual(s.outputDevices, outputDevices)) patch.outputDevices = outputDevices;
-      if (!jsonEqual(s.channelOutputs, channelOutputs)) patch.channelOutputs = channelOutputs;
-      if (!jsonEqual(s.resolvedOutputs, resolvedOutputs)) patch.resolvedOutputs = resolvedOutputs;
-      if (!jsonEqual(s.channelFailover, channelFailover)) patch.channelFailover = channelFailover;
-      if (Object.keys(patch).length) set(patch);
+      const outputDevices = await invoke<OutputDevice[]>("get_output_devices");
+      if (!jsonEqual(get().outputDevices, outputDevices)) set({ outputDevices });
     } catch (e) {
       set({ error: String(e) });
-    }
-  },
-
-  setChannelOutput: async (sinkName, outputName) => {
-    set((s) => ({
-      channelOutputs: { ...s.channelOutputs, [sinkName]: outputName },
-    }));
-    try {
-      await invoke("set_channel_output", { sinkName, outputName: outputName ?? "" });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchOutputs();
-    }
-  },
-
-  setChannelFailover: async (sinkName, enabled) => {
-    set((s) => ({
-      channelFailover: { ...s.channelFailover, [sinkName]: enabled },
-    }));
-    try {
-      await invoke("set_channel_failover", { sinkName, enabled });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchOutputs();
-    }
-  },
-
-  setAllOutputs: async (outputName) => {
-    for (const channel of get().channels) {
-      await get().setChannelOutput(channel.name, outputName);
     }
   },
 

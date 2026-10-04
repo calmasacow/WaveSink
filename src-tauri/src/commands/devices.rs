@@ -22,7 +22,6 @@ pub fn get_virtual_devices(state: State<'_, AppState>) -> Result<Vec<VirtualSink
 /// All running app audio streams.
 #[tauri::command]
 pub fn get_app_streams(state: State<'_, AppState>) -> Result<Vec<AppStream>, String> {
-    state.note_ui_stream_poll();
     refresh_streams(state.inner())
 }
 
@@ -307,7 +306,7 @@ pub fn init_virtual_devices(
             .map_err(|e| e.to_string())?;
     }
 
-    let (outputs, eq, buses, mix_outputs, hardware_inputs) = {
+    let (eq, buses, mix_outputs, hardware_inputs) = {
         let mut mixer = state.lock_mixer()?;
         mixer.init_defaults();
         // Refresh the matrix's compatibility projection after the starter
@@ -333,9 +332,9 @@ pub fn init_virtual_devices(
                 target.entry(mix).or_insert(cell);
             }
         }
+        mixer.routing.ensure_an_output();
         let _ = mixer.routing.save();
         (
-            mixer.outputs.clone(),
             mixer.eq.clone(),
             mixer.buses.clone(),
             mixer
@@ -357,21 +356,7 @@ pub fn init_virtual_devices(
         eprintln!("wavesink: saving mixes failed: {e}");
     }
 
-    // Wire every channel to its saved output (or the system default) so
-    // channels are audible from the start.
     for def in &defs.channels {
-        if let Err(e) = state
-            .backend
-            .set_channel_output(&def.name, outputs.get(&def.name))
-        {
-            eprintln!("wavesink: output routing for {} failed: {e}", def.name);
-        }
-        // Restore per-channel failover (default on, so only push the ones off).
-        if !outputs.failover(&def.name) {
-            if let Err(e) = state.backend.set_channel_failover(&def.name, false) {
-                eprintln!("wavesink: failover setting for {} failed: {e}", def.name);
-            }
-        }
         // Restore saved EQ (only channels that were ever configured; the
         // loop builds the insert when the sink node appears).
         if let Some(config) = eq.configs.get(&def.name) {
@@ -454,101 +439,6 @@ pub fn init_virtual_devices(
     Ok(())
 }
 
-/// Current per-channel output choices (None = follow system default).
-#[tauri::command]
-pub fn get_channel_outputs(
-    state: State<'_, AppState>,
-) -> Result<std::collections::HashMap<String, Option<String>>, String> {
-    let mixer = state.lock_mixer()?;
-    Ok(mixer
-        .channel_defs
-        .channels
-        .iter()
-        .map(|def| {
-            (
-                def.name.clone(),
-                mixer.outputs.get(&def.name).map(str::to_string),
-            )
-        })
-        .collect())
-}
-
-/// Per-channel resolved output: the device node.name each channel is actually
-/// routed to right now. Empty on the pactl fallback, which can't report it.
-#[tauri::command]
-pub fn get_resolved_outputs(
-    state: State<'_, AppState>,
-) -> Result<std::collections::HashMap<String, Option<String>>, String> {
-    state
-        .backend
-        .resolved_channel_outputs()
-        .map_err(|e| e.to_string())
-}
-
-/// Whether each channel fails over to another device when its chosen device
-/// (or the default) is gone. On unless explicitly turned off.
-#[tauri::command]
-pub fn get_channel_failover(
-    state: State<'_, AppState>,
-) -> Result<std::collections::HashMap<String, bool>, String> {
-    let mixer = state.lock_mixer()?;
-    Ok(mixer
-        .channel_defs
-        .channels
-        .iter()
-        .map(|def| (def.name.clone(), mixer.outputs.failover(&def.name)))
-        .collect())
-}
-
-/// Route a channel to an output device; empty `output_name` = follow the
-/// system default. Persisted across restarts.
-#[tauri::command]
-pub fn set_channel_output(
-    state: State<'_, AppState>,
-    sink_name: String,
-    output_name: String,
-) -> Result<(), String> {
-    let output = if output_name.is_empty() {
-        None
-    } else {
-        Some(output_name)
-    };
-    state
-        .backend
-        .set_channel_output(&sink_name, output.as_deref())
-        .map_err(|e| e.to_string())?;
-
-    let outputs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer.outputs.set(&sink_name, output);
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.outputs.clone()
-    };
-    outputs.save().map_err(|e| e.to_string())
-}
-
-/// Turn a channel's auto-failover on or off. Off = the channel plays only on
-/// its chosen device (or exact default) and stays silent when that's gone.
-#[tauri::command]
-pub fn set_channel_failover(
-    state: State<'_, AppState>,
-    sink_name: String,
-    enabled: bool,
-) -> Result<(), String> {
-    state
-        .backend
-        .set_channel_failover(&sink_name, enabled)
-        .map_err(|e| e.to_string())?;
-
-    let outputs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer.outputs.set_failover(&sink_name, enabled);
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.outputs.clone()
-    };
-    outputs.save().map_err(|e| e.to_string())
-}
-
 /// Destroy all virtual sinks. Called before the app exits.
 #[tauri::command]
 pub fn teardown_virtual_devices(state: State<'_, AppState>) -> Result<(), String> {
@@ -573,7 +463,7 @@ mod tests {
         let backend = Arc::new(MockBackend::with_streams(vec![stream(
             7, 100, "Firefox", None,
         )]));
-        let state = AppState::new(backend.clone(), true);
+        let state = AppState::new(backend.clone());
         {
             let mut mixer = state.lock_mixer().expect("mixer");
             mixer.init_defaults();
@@ -613,7 +503,7 @@ mod tests {
             .props
             .insert("application.process.id".into(), "2".into());
         let backend = Arc::new(MockBackend::with_streams(vec![spotify]));
-        let state = AppState::new(backend.clone(), true);
+        let state = AppState::new(backend.clone());
         {
             let mut mixer = state.lock_mixer().expect("mixer");
             mixer.init_defaults();
@@ -694,7 +584,7 @@ mod tests {
         let backend = Arc::new(MockBackend::with_streams(vec![stream(
             9, 300, "Spotify", None,
         )]));
-        let state = AppState::new(backend.clone(), true);
+        let state = AppState::new(backend.clone());
         state.lock_mixer().expect("mixer").init_defaults();
 
         let streams = refresh_streams(&state).expect("pass");

@@ -27,8 +27,7 @@ pub fn add_channel(
             .backend
             .create_virtual_sink(&def.name, &prefs.decorate(&def.label))?;
         state.backend.set_sink_volume(&def.name, 100)?;
-        state.backend.set_sink_mute(&def.name, false)?;
-        state.backend.set_channel_output(&def.name, None)
+        state.backend.set_sink_mute(&def.name, false)
     })() {
         // Roll back so config matches reality: destroy the sink if it got
         // created (idempotent if it didn't), then drop the definition.

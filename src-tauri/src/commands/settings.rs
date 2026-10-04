@@ -9,12 +9,6 @@ use crate::persistence::prefs::Prefs;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct BackendInfo {
-    /// True = native PipeWire backend; false = pactl subprocess fallback.
-    pub native: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct OmarchyTheme {
     pub name: String,
     pub colors: BTreeMap<String, String>,
@@ -58,13 +52,6 @@ pub fn get_omarchy_theme() -> Option<OmarchyTheme> {
         name: name.to_owned(),
         colors: parse_omarchy_colors(&fs::read_to_string(state.join("theme/colors.toml")).ok()?)?,
     })
-}
-
-#[tauri::command]
-pub fn get_backend_info(state: State<'_, AppState>) -> BackendInfo {
-    BackendInfo {
-        native: state.backend_native,
-    }
 }
 
 #[cfg(test)]

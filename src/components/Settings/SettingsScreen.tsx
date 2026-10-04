@@ -193,17 +193,9 @@ function MetersSection({ onError }: Readonly<{ onError: (error: string | null) =
   );
 }
 
-function engineDesc(native: boolean | null): string {
-  if (native === null) return "…";
-  return native
-    ? "Native PipeWire (pipewire-rs) - live metering, passive routing"
-    : "pactl fallback - native engine unavailable on this system";
-}
-
 export function SettingsScreen() {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [startMinimized, setStartMinimized] = useState(false);
-  const [backendNative, setBackendNative] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +203,6 @@ export function SettingsScreen() {
 
   useEffect(() => {
     void invoke<boolean>("get_autostart").then(setAutostart);
-    void invoke<{ native: boolean }>("get_backend_info").then((i) => setBackendNative(i.native));
     void invoke<{ start_minimized: boolean }>("get_prefs")
       .then((p) => {
         setStartMinimized(p.start_minimized);
@@ -307,13 +298,8 @@ export function SettingsScreen() {
             </div>
             <div className="rmain">
               <div className="rtitle">Audio engine</div>
-              <div className="rsub">{engineDesc(backendNative)}</div>
+              <div className="rsub">Native PipeWire graph (pipewire-rs)</div>
             </div>
-            {backendNative !== null && (
-              <span className={"tag" + (backendNative ? " live" : "")}>
-                {backendNative ? "native" : "fallback"}
-              </span>
-            )}
           </div>
           <div className="row">
             <div className="ricon">

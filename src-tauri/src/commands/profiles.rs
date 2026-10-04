@@ -139,23 +139,7 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
             .backend
             .set_sink_mute(&channel.name, channel.muted)
             .map_err(|e| e.to_string())?;
-        // Output: profile's choice, or follow-default when unset.
-        if let Err(e) = state
-            .backend
-            .set_channel_output(&channel.name, profile.outputs.get(&channel.name))
-        {
-            eprintln!("wavesink: profile output for {} failed: {e}", channel.name);
-        }
-        if let Err(e) = state
-            .backend
-            .set_channel_failover(&channel.name, profile.outputs.failover(&channel.name))
-        {
-            eprintln!(
-                "wavesink: profile failover for {} failed: {e}",
-                channel.name
-            );
-        }
-        // EQ: non-fatal like output/failover - one channel's insert failing
+        // EQ: non-fatal - one channel's insert failing
         // must not abort the whole profile load.
         if let Err(e) = state
             .backend

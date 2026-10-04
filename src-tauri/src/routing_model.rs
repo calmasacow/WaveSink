@@ -127,6 +127,9 @@ pub struct InputDef {
     pub order: u32,
 }
 
+/// The output binding that follows the desktop's default output device.
+pub const SYSTEM_DEFAULT_OUTPUT: &str = "@default";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OutputBinding {
     pub device: String,
@@ -295,6 +298,29 @@ impl RoutingModel {
         }
     }
 
+    /// Channels reach outputs only through mixes. A setup that relied on
+    /// channels playing straight to the default device would go silent, so
+    /// when no mix plays anywhere, the first mix follows the system default.
+    /// Returns whether it changed anything.
+    pub fn ensure_an_output(&mut self) -> bool {
+        let plays_somewhere = self
+            .mixes
+            .iter()
+            .any(|mix| mix.output_bindings.iter().any(|b| b.enabled));
+        // The list order is the matrix's column order: leftmost mix.
+        let Some(first) = self.mixes.first_mut() else {
+            return false;
+        };
+        if plays_somewhere {
+            return false;
+        }
+        first.output_bindings.push(OutputBinding {
+            device: SYSTEM_DEFAULT_OUTPUT.to_string(),
+            enabled: true,
+        });
+        true
+    }
+
     pub fn from_legacy(channels: &Channels, buses: &Buses, outputs: &ChannelOutputs) -> Self {
         let inputs = channels
             .channels
@@ -416,6 +442,51 @@ fn outputs_for_legacy(outputs: &ChannelOutputs) -> Vec<OutputBinding> {
 
 #[cfg(test)]
 mod tests {
+
+    fn mix(id: &str, outputs: Vec<OutputBinding>) -> MixDef {
+        MixDef {
+            id: id.into(),
+            label: id.into(),
+            icon: None,
+            icon_color: None,
+            volume_percent: 100,
+            muted: false,
+            output_bindings: outputs,
+            order: 0,
+            role: crate::persistence::buses::MixRole::Recording,
+        }
+    }
+
+    #[test]
+    fn a_silent_setup_gets_the_system_default_on_its_first_mix() {
+        let mut model = RoutingModel {
+            mixes: vec![mix("sink_bus_a", vec![]), mix("sink_bus_b", vec![])],
+            ..RoutingModel::default()
+        };
+        assert!(model.ensure_an_output());
+        assert_eq!(
+            model.mixes[0].output_bindings[0].device,
+            SYSTEM_DEFAULT_OUTPUT
+        );
+        assert!(model.mixes[1].output_bindings.is_empty());
+        // Idempotent: once something plays, nothing more is added.
+        assert!(!model.ensure_an_output());
+    }
+
+    #[test]
+    fn a_setup_with_an_output_is_left_alone() {
+        let bound = vec![OutputBinding {
+            device: "alsa_output.hdmi".into(),
+            enabled: true,
+        }];
+        let mut model = RoutingModel {
+            mixes: vec![mix("sink_bus_a", vec![]), mix("sink_bus_b", bound.clone())],
+            ..RoutingModel::default()
+        };
+        assert!(!model.ensure_an_output());
+        assert!(model.mixes[0].output_bindings.is_empty());
+        assert_eq!(model.mixes[1].output_bindings, bound);
+    }
 
     #[test]
     fn fx_is_active_only_with_a_stage_on() {

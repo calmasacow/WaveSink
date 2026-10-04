@@ -216,7 +216,7 @@ mod tests {
     /// An AppState on a private config root, channels created, with one
     /// saved assignment for Firefox.
     fn app(backend: Arc<MockBackend>) -> AppState {
-        let state = AppState::new(backend, true);
+        let state = AppState::new(backend);
         {
             let mut mixer = state.lock_mixer().expect("mixer");
             mixer.init_defaults();
