@@ -1,8 +1,9 @@
+# WaveSink
 <p align="center">
   <img src="assets/WaveSinkLogo.png" alt="WaveSink" width="220">
 </p>
 
-# WaveSink
+
 
 Linux-native input/mix routing for PipeWire, inspired by the workflow of
 modern creator mixers.
