@@ -42,11 +42,7 @@ impl AppState {
     pub fn new(backend: Arc<dyn AudioBackend>) -> Self {
         // Saved assignments are loaded eagerly so auto-routing can enforce
         // them as soon as the sinks exist.
-        let channel_defs = crate::persistence::channels::Channels::load();
-        let buses = crate::persistence::buses::Buses::load(&channel_defs);
-        let outputs = crate::persistence::outputs::ChannelOutputs::load();
-        let routing =
-            crate::routing_model::RoutingModel::load_or_migrate(&channel_defs, &buses, &outputs);
+        let routing = crate::routing_model::RoutingModel::load_or_migrate();
         let active_profile = crate::persistence::active::load();
         // Cache the active profile's trigger once so autosave never has to
         // re-read the profile file to preserve it.
@@ -58,10 +54,7 @@ impl AppState {
         let mut mixer = MixerState {
             assignments: crate::persistence::assignments::Assignments::load(),
             aliases: crate::persistence::aliases::Aliases::load(),
-            outputs,
             eq: crate::persistence::eq::ChannelEq::load(),
-            channel_defs,
-            buses,
             routing,
             seen: crate::persistence::seen::SeenApps::load(),
             active_profile,
@@ -93,13 +86,7 @@ impl AppState {
         let names: Vec<String> = self
             .mixer
             .lock()
-            .map(|m| {
-                m.channel_defs
-                    .channels
-                    .iter()
-                    .map(|c| c.name.clone())
-                    .collect()
-            })
+            .map(|m| m.routing.channels().map(|c| c.id.clone()).collect())
             .unwrap_or_default();
         let mut errors = Vec::new();
         for name in names {

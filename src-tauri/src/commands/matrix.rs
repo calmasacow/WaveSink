@@ -4,56 +4,6 @@ use tauri::State;
 use crate::routing_model::{FxChain, InputDef, InputKind, OutputBinding, RouteCell, RoutingModel};
 use crate::state::AppState;
 
-/// Legacy buses own membership and levels while the graph migration runs.
-/// Matrix-only fields must survive that projection on every read.
-pub(crate) fn project_legacy(model: &mut RoutingModel, legacy: &RoutingModel) {
-    let saved_inputs = model.inputs.clone();
-    let saved_mixes = model.mixes.clone();
-    let extras = model
-        .inputs
-        .iter()
-        .filter(|input| {
-            !legacy
-                .inputs
-                .iter()
-                .any(|legacy_input| legacy_input.id == input.id)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    model.inputs = legacy.inputs.clone();
-    model.inputs.extend(extras);
-    model.mixes = legacy
-        .mixes
-        .iter()
-        .cloned()
-        .map(|mut mix| {
-            if let Some(saved) = model.mixes.iter().find(|saved| saved.id == mix.id) {
-                mix.icon = saved.icon.clone();
-                // Old routing files have no mix color. Preserve the normalized
-                // bus default instead of replacing it with a missing value.
-                mix.icon_color = saved.icon_color.clone().or(mix.icon_color);
-                mix.output_bindings = saved.output_bindings.clone();
-            }
-            mix
-        })
-        .collect();
-    sort_by_saved_order(&mut model.inputs, &legacy.inputs, &saved_inputs);
-    sort_by_saved_order(&mut model.mixes, &legacy.mixes, &saved_mixes);
-}
-
-fn sort_by_saved_order<T>(items: &mut [T], legacy: &[T], saved: &[T])
-where
-    T: HasId,
-{
-    items.sort_by_key(|item| {
-        saved
-            .iter()
-            .position(|saved| saved.id() == item.id())
-            .or_else(|| legacy.iter().position(|legacy| legacy.id() == item.id()))
-            .unwrap_or(usize::MAX)
-    });
-}
-
 trait HasId {
     fn id(&self) -> &str;
 }
@@ -68,22 +18,10 @@ impl HasId for crate::routing_model::MixDef {
     }
 }
 
-/// Return the matrix projection used by the routing-table UI and future
-/// control-surface APIs. Legacy channel/bus edits are folded in on read so an
-/// older profile or a tray action cannot leave the table stale.
+/// The routing model: inputs, mixes and every cell. The one source of truth.
 #[tauri::command]
 pub fn get_routing_model(state: State<'_, AppState>) -> Result<RoutingModel, String> {
-    let mixer = state.lock_mixer()?;
-    let legacy = RoutingModel::from_legacy(&mixer.channel_defs, &mixer.buses, &mixer.outputs);
-    let mut model = mixer.routing.clone();
-    project_legacy(&mut model, &legacy);
-    for (input, cells) in legacy.routes {
-        let target = model.routes.entry(input).or_default();
-        for (mix, cell) in cells {
-            target.entry(mix).or_insert(cell);
-        }
-    }
-    Ok(model)
+    Ok(state.lock_mixer()?.routing.clone())
 }
 
 fn reorder<T: HasId>(items: &mut [T], order: &[String]) -> Result<(), String> {
@@ -108,9 +46,7 @@ fn reorder<T: HasId>(items: &mut [T], order: &[String]) -> Result<(), String> {
 pub fn reorder_matrix_inputs(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
     let mut mixer = state.lock_mixer()?;
     reorder(&mut mixer.routing.inputs, &order)?;
-    for (index, input) in mixer.routing.inputs.iter_mut().enumerate() {
-        input.order = index as u32;
-    }
+    mixer.routing.renumber();
     mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())
@@ -120,53 +56,10 @@ pub fn reorder_matrix_inputs(state: State<'_, AppState>, order: Vec<String>) -> 
 pub fn reorder_matrix_mixes(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
     let mut mixer = state.lock_mixer()?;
     reorder(&mut mixer.routing.mixes, &order)?;
-    for (index, mix) in mixer.routing.mixes.iter_mut().enumerate() {
-        mix.order = index as u32;
-    }
+    mixer.routing.renumber();
     mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::persistence::buses::Buses;
-    use crate::persistence::channels::Channels;
-    use crate::persistence::outputs::ChannelOutputs;
-
-    #[test]
-    fn legacy_projection_preserves_saved_order_and_appends_new_items() {
-        let channels = Channels::default();
-        let mut buses = Buses::default();
-        buses.add("Stream").unwrap();
-        buses.add("Chat").unwrap();
-        let legacy = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
-        let mut saved = legacy.clone();
-        saved.inputs.reverse();
-        saved.mixes.reverse();
-
-        let new_input = InputDef {
-            id: "sink_new".into(),
-            label: "New".into(),
-            icon: None,
-            icon_color: None,
-            kind: InputKind::Software,
-            source_name: "sink_new".into(),
-            volume_percent: 100,
-            muted: false,
-            fx: FxChain::default(),
-            order: legacy.inputs.len() as u32,
-        };
-        let mut current = legacy.clone();
-        current.inputs.push(new_input);
-
-        project_legacy(&mut saved, &current);
-
-        assert_eq!(saved.inputs[0].id, legacy.inputs.last().unwrap().id);
-        assert_eq!(saved.inputs.last().unwrap().id, "sink_new");
-        assert_eq!(saved.mixes[0].id, legacy.mixes.last().unwrap().id);
-    }
 }
 
 /// Add a hardware source to the matrix. It remains present while disconnected
@@ -204,7 +97,7 @@ pub fn add_hardware_input(
     }
     let id = format!("hardware:{source_name}");
     let order = mixer.routing.inputs.len() as u32;
-    let mixes = mixer.routing.mixes.clone();
+    // It starts in no mix (an absent cell is off): tick its cells to route it.
     mixer.routing.inputs.push(InputDef {
         id: id.clone(),
         label: label.to_string(),
@@ -217,13 +110,6 @@ pub fn add_hardware_input(
         fx: FxChain::default(),
         order,
     });
-    mixer.routing.routes.insert(
-        id,
-        mixes
-            .into_iter()
-            .map(|mix| (mix.id, RouteCell::default()))
-            .collect(),
-    );
     state
         .backend
         .set_hardware_input(
@@ -254,74 +140,25 @@ pub fn set_route_cell(
     send_percent: u8,
     muted: bool,
 ) -> Result<(), String> {
-    let cell = RouteCell {
-        enabled,
-        send_percent: send_percent.min(MAX_VOLUME),
-        muted,
-    };
-    let (def, bus_channels, hardware) = {
+    let model = {
         let mut mixer = state.lock_mixer()?;
-        let mut model = mixer.routing.clone();
-        let legacy = RoutingModel::from_legacy(&mixer.channel_defs, &mixer.buses, &mixer.outputs);
-        project_legacy(&mut model, &legacy);
-        model
-            .set_cell(&input_id, &mix_id, cell.clone())
-            .map_err(|e| e.to_string())?;
-        let hardware = model
-            .inputs
-            .iter()
-            .any(|input| input.id == input_id && input.kind == InputKind::Hardware);
-        model.save().map_err(|e| e.to_string())?;
-        mixer.routing = model;
-        let all = mixer
-            .channel_defs
-            .channels
-            .iter()
-            .map(|c| c.name.clone())
-            .collect::<Vec<_>>();
-        let def = mixer.buses.get(&mix_id).cloned();
-        let mut members = def
-            .as_ref()
-            .map(|d| d.effective_members(&all))
-            .unwrap_or_default();
-        if enabled && !members.contains(&input_id) {
-            members.push(input_id.clone());
-        }
-        if !enabled {
-            members.retain(|m| m != &input_id);
-        }
-        (def, members, hardware)
-    };
-
-    if def.is_some() {
-        crate::commands::buses::push_bus_members(&state, &mix_id, &bus_channels)
-            .map_err(|e| e.to_string())?;
-        let effective_gain = if muted || !enabled {
-            0
-        } else {
-            cell.send_percent
-        };
-        state
-            .backend
-            .set_bus_member_gain(&mix_id, &input_id, effective_gain)
-            .map_err(|e| e.to_string())?;
-        let mut mixer = state.lock_mixer()?;
-        if !hardware {
-            mixer
-                .buses
-                .set_members(&mix_id, bus_channels)
-                .map_err(|e| e.to_string())?;
-        }
         mixer
-            .buses
-            .set_member_gain(&mix_id, &input_id, effective_gain)
+            .routing
+            .set_cell(
+                &input_id,
+                &mix_id,
+                RouteCell {
+                    enabled,
+                    send_percent: send_percent.min(MAX_VOLUME),
+                    muted,
+                },
+            )
             .map_err(|e| e.to_string())?;
-        mixer.buses.save().map_err(|e| e.to_string())?;
+        mixer.routing.save().map_err(|e| e.to_string())?;
         crate::commands::profiles::autosave_active(&mixer);
-    } else {
-        return Err(format!("unknown mix {mix_id}"));
-    }
-    Ok(())
+        mixer.routing.clone()
+    };
+    crate::commands::graph::apply_mix_routes(&state, &model, &mix_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -423,11 +260,11 @@ pub fn remove_hardware_input(state: State<'_, AppState>, input_id: String) -> Re
         .filter(|input| input.kind == InputKind::Hardware)
         .cloned()
         .ok_or_else(|| format!("unknown hardware input {input_id}"))?;
-    mixer.routing.inputs.retain(|item| item.id != input_id);
-    mixer.routing.routes.remove(&input_id);
-    mixer.buses.remove_channel(&input_id);
+    mixer
+        .routing
+        .remove_input(&input_id)
+        .map_err(|e| e.to_string())?;
     mixer.routing.save().map_err(|e| e.to_string())?;
-    mixer.buses.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     drop(mixer);
     state
@@ -442,28 +279,19 @@ pub fn set_mix_outputs(
     mix_id: String,
     outputs: Vec<OutputBinding>,
 ) -> Result<(), String> {
-    {
-        let mixer = state.lock_mixer()?;
-        if !mixer.buses.buses.iter().any(|mix| mix.name == mix_id) {
-            return Err(format!("unknown mix {mix_id}"));
-        }
+    if state.lock_mixer()?.routing.mix(&mix_id).is_none() {
+        return Err(format!("unknown mix {mix_id}"));
     }
     state
         .backend
         .set_mix_outputs(&mix_id, &outputs)
         .map_err(|e| e.to_string())?;
     let mut mixer = state.lock_mixer()?;
-    if !mixer.routing.mixes.iter().any(|mix| mix.id == mix_id) {
-        mixer.routing.mixes =
-            RoutingModel::from_legacy(&mixer.channel_defs, &mixer.buses, &mixer.outputs).mixes;
-    }
-    let mix = mixer
+    mixer
         .routing
-        .mixes
-        .iter_mut()
-        .find(|m| m.id == mix_id)
-        .ok_or_else(|| format!("unknown mix {mix_id}"))?;
-    mix.output_bindings = outputs;
+        .mix_mut(&mix_id)
+        .map_err(|e| e.to_string())?
+        .output_bindings = outputs;
     mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())

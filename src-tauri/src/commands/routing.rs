@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::audio::types::is_virtual_sink;
 use crate::state::AppState;
 
 /// Every level tops out at unity: 100% means unchanged audio, no boost.
@@ -34,7 +33,7 @@ pub fn route_app_to_channel(
 }
 
 pub fn route_app(state: &AppState, stream_index: u32, sink_name: &str) -> Result<(), String> {
-    if !sink_name.is_empty() && !is_virtual_sink(sink_name) {
+    if !sink_name.is_empty() && !state.lock_mixer()?.routing.is_channel(sink_name) {
         return Err(format!("unknown channel: {sink_name}"));
     }
 
@@ -97,7 +96,7 @@ pub fn set_channel_volume(
 ) -> Result<(), String> {
     // Only our own channels, so a compromised webview can't touch arbitrary
     // session sinks.
-    if !is_virtual_sink(&sink_name) {
+    if !state.lock_mixer()?.routing.is_channel(&sink_name) {
         return Err(format!("unknown channel: {sink_name}"));
     }
     let volume = volume.min(MAX_VOLUME);
@@ -105,19 +104,7 @@ pub fn set_channel_volume(
         .backend
         .set_sink_volume(&sink_name, volume)
         .map_err(|e| e.to_string())?;
-
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        if let Some(channel) = mixer.channel_mut(&sink_name) {
-            channel.volume_percent = volume;
-        }
-        // Persist the level itself, not just into an active profile - a channel
-        // must come back at its last volume even when no profile is bound.
-        mixer.channel_defs.set_volume(&sink_name, volume);
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    set_channel_level(&state, &sink_name, |c| c.volume_percent = volume)
 }
 
 /// Mute or unmute a channel.
@@ -127,24 +114,33 @@ pub fn toggle_channel_mute(
     sink_name: String,
     muted: bool,
 ) -> Result<(), String> {
-    if !is_virtual_sink(&sink_name) {
+    if !state.lock_mixer()?.routing.is_channel(&sink_name) {
         return Err(format!("unknown channel: {sink_name}"));
     }
     state
         .backend
         .set_sink_mute(&sink_name, muted)
         .map_err(|e| e.to_string())?;
+    set_channel_level(&state, &sink_name, |c| c.muted = muted)
+}
 
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        if let Some(channel) = mixer.channel_mut(&sink_name) {
-            channel.muted = muted;
-        }
-        mixer.channel_defs.set_muted(&sink_name, muted);
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+/// Persist a channel's level - it must come back at its last volume and mute
+/// even when no profile is bound.
+fn set_channel_level(
+    state: &AppState,
+    sink_name: &str,
+    edit: impl FnOnce(&mut crate::routing_model::InputDef),
+) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    edit(
+        mixer
+            .routing
+            .channel_mut(sink_name)
+            .map_err(|e| e.to_string())?,
+    );
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
 /// Set or clear a persistent display name for an app, keyed by its stream
@@ -191,7 +187,7 @@ mod tests {
         let state = AppState::new(backend);
         {
             let mut mixer = state.lock_mixer().expect("mixer");
-            mixer.init_defaults();
+            mixer.init_test_defaults();
             mixer
                 .assignments
                 .set("application.name", "Firefox", "sink_game");

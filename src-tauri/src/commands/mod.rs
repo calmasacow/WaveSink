@@ -3,6 +3,7 @@ pub mod buses;
 pub mod channels;
 pub mod devices;
 pub mod eq;
+pub mod graph;
 pub mod hotkeys;
 pub mod matrix;
 pub mod profiles;

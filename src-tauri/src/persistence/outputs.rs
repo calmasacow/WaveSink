@@ -35,23 +35,6 @@ impl ChannelOutputs {
             Err(_) => Self::default(),
         }
     }
-
-    pub fn save(&self) -> Result<(), SinkError> {
-        let path = Self::config_path()?;
-        if let Some(parent) = path.parent() {
-            crate::persistence::ensure_private_dir(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| SinkError::Config(format!("serialize outputs: {e}")))?;
-        super::write_atomic(&path, &json)?;
-        Ok(())
-    }
-
-    /// Drop all state for a removed channel.
-    pub fn remove(&mut self, sink_name: &str) {
-        self.outputs.remove(sink_name);
-        self.no_failover.remove(sink_name);
-    }
 }
 
 #[cfg(test)]
@@ -65,14 +48,5 @@ mod tests {
         let o: ChannelOutputs = serde_json::from_str(legacy).expect("legacy loads");
         assert_eq!(o.outputs.get("sink_game"), Some(&Some("dev".to_string())));
         assert!(o.no_failover.is_empty());
-    }
-
-    #[test]
-    fn remove_drops_a_channel() {
-        let mut o: ChannelOutputs =
-            serde_json::from_str(r#"{"outputs":{"sink_game":"dev"},"no_failover":["sink_game"]}"#)
-                .unwrap();
-        o.remove("sink_game");
-        assert!(o.outputs.is_empty() && o.no_failover.is_empty());
     }
 }

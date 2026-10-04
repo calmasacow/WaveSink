@@ -1,65 +1,40 @@
 use tauri::State;
 
-use crate::audio::backend::AudioBackend;
 use crate::commands::routing::MAX_VOLUME;
-use crate::persistence::buses::{is_bus_name, BusDef};
 use crate::state::AppState;
 
-/// Re-apply a mix's persisted volume/mute to its node: bus nodes are born at
-/// unity/unmuted, and a routing failure shouldn't abort bringing the mix up.
-pub(crate) fn apply_bus_level(backend: &dyn AudioBackend, def: &BusDef) {
-    if def.volume_percent != 100 {
-        let _ = backend.set_sink_volume(&def.name, def.volume_percent);
-    }
-    if def.muted {
-        let _ = backend.set_sink_mute(&def.name, true);
-    }
+/// Apply a change to one mix's definition and persist it.
+fn edit_mix(
+    state: &AppState,
+    name: &str,
+    edit: impl FnOnce(&mut crate::routing_model::MixDef),
+) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    edit(mixer.routing.mix_mut(name).map_err(|e| e.to_string())?);
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
-/// Restore persisted send levels on a fresh/recreated bus (the
-/// `apply_bus_level` rationale).
-pub(crate) fn apply_bus_member_gains(backend: &dyn AudioBackend, def: &BusDef) {
-    for (member, percent) in &def.member_gains {
-        let _ = backend.set_bus_member_gain(&def.name, member, *percent);
-    }
-}
-
-/// The user's mixes (buses) with their member channels.
-#[tauri::command]
-pub fn list_buses(state: State<'_, AppState>) -> Result<Vec<BusDef>, String> {
-    let mixer = state.lock_mixer()?;
-    Ok(mixer.buses.buses.clone())
-}
-
-/// Create a new mix. Recorders see it under `label`. New mixes carry
-/// every channel (auto-include) until the user unchecks some.
+/// Create a new mix. Recorders see it under `label`. It starts empty: tick
+/// the cells of the inputs it should carry.
 #[tauri::command]
 pub fn add_bus(state: State<'_, AppState>, label: String) -> Result<(), String> {
-    let (def, defs, prefs, all) = {
+    let (mix, prefs) = {
         let mut mixer = state.lock_mixer()?;
-        let def = mixer.buses.add(&label).map_err(|e| e.to_string())?;
-        (
-            def,
-            mixer.buses.clone(),
-            mixer.prefs.clone(),
-            channel_names(&mixer),
-        )
+        let mix = mixer.routing.add_mix(&label).map_err(|e| e.to_string())?;
+        (mix, mixer.prefs.clone())
     };
     if let Err(e) = state
         .backend
-        .create_bus(&def.name, &prefs.decorate(&def.label))
+        .create_bus(&mix.id, &prefs.decorate(&mix.label))
     {
         let mut mixer = state.lock_mixer()?;
-        let _ = mixer.buses.remove(&def.name);
+        let _ = mixer.routing.remove_mix(&mix.id);
         return Err(e.to_string());
     }
-    if let Err(e) =
-        crate::commands::buses::push_bus_members(&state, &def.name, &def.effective_members(&all))
-    {
-        eprintln!("wavesink: members for new mix {} failed: {e}", def.name);
-    }
-    defs.save().map_err(|e| e.to_string())?;
     let mixer = state.lock_mixer()?;
+    mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())
 }
@@ -71,22 +46,34 @@ pub fn rename_bus(state: State<'_, AppState>, name: String, label: String) -> Re
     rename_bus_on(&state, name, label)
 }
 
-#[tauri::command]
-pub fn set_bus_icon(state: State<'_, AppState>, name: String, icon: String) -> Result<(), String> {
-    let defs = {
+pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<(), String> {
+    let _rebuild = state.lock_bus_rebuild();
+    let (model, prefs) = {
         let mut mixer = state.lock_mixer()?;
         mixer
-            .buses
-            .set_icon(&name, icon.clone())
+            .routing
+            .rename_mix(&name, &label)
             .map_err(|e| e.to_string())?;
-        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
-            mix.icon = Some(icon);
-            mixer.routing.save().map_err(|e| e.to_string())?;
-        }
+        mixer.routing.save().map_err(|e| e.to_string())?;
         crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
+        (mixer.routing.clone(), mixer.prefs.clone())
     };
-    defs.save().map_err(|e| e.to_string())
+    let mix = model
+        .mix(&name)
+        .cloned()
+        .ok_or_else(|| "unknown mix".to_string())?;
+    state
+        .backend
+        .destroy_bus(&name)
+        .map_err(|e| e.to_string())?;
+    // The node is fresh: give it back everything it carried.
+    crate::commands::graph::bring_up_mix(state, &model, &mix, &prefs);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_bus_icon(state: State<'_, AppState>, name: String, icon: String) -> Result<(), String> {
+    edit_mix(&state, &name, |mix| mix.icon = Some(icon))
 }
 
 #[tauri::command]
@@ -95,61 +82,7 @@ pub fn set_bus_icon_color(
     name: String,
     icon_color: String,
 ) -> Result<(), String> {
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .buses
-            .set_icon_color(&name, icon_color.clone())
-            .map_err(|e| e.to_string())?;
-        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
-            mix.icon_color = Some(icon_color);
-            mixer.routing.save().map_err(|e| e.to_string())?;
-        }
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
-}
-
-pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<(), String> {
-    let _rebuild = state.lock_bus_rebuild();
-    let (def, defs, prefs, all) = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .buses
-            .rename(&name, &label)
-            .map_err(|e| e.to_string())?;
-        let def = mixer
-            .buses
-            .get(&name)
-            .cloned()
-            .ok_or_else(|| "unknown mix".to_string())?;
-        (
-            def,
-            mixer.buses.clone(),
-            mixer.prefs.clone(),
-            channel_names(&mixer),
-        )
-    };
-
-    state
-        .backend
-        .destroy_bus(&name)
-        .map_err(|e| e.to_string())?;
-    state
-        .backend
-        .create_bus(&def.name, &prefs.decorate(&def.label))
-        .map_err(|e| e.to_string())?;
-    crate::commands::buses::push_bus_members(&state, &def.name, &def.effective_members(&all))
-        .map_err(|e| e.to_string())?;
-    // The node is fresh; restore its saved level and send gains.
-    apply_bus_level(state.backend.as_ref(), &def);
-    apply_bus_member_gains(state.backend.as_ref(), &def);
-
-    defs.save().map_err(|e| e.to_string())?;
-    let mixer = state.lock_mixer()?;
-    crate::commands::profiles::autosave_active(&mixer);
-    Ok(())
+    edit_mix(&state, &name, |mix| mix.icon_color = Some(icon_color))
 }
 
 /// Delete a mix.
@@ -162,129 +95,25 @@ pub fn remove_bus_on(state: &AppState, name: String) -> Result<(), String> {
     let _rebuild = state.lock_bus_rebuild();
     // Validate before the node goes away - rejecting afterwards would leave
     // the mix torn down in PipeWire but still defined here.
-    state
-        .lock_mixer()?
-        .buses
-        .removable(&name)
-        .map_err(|e| e.to_string())?;
+    if state.lock_mixer()?.routing.mix(&name).is_none() {
+        return Err(format!("unknown mix: {name}"));
+    }
     state
         .backend
         .destroy_bus(&name)
         .map_err(|e| e.to_string())?;
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer.buses.remove(&name).map_err(|e| e.to_string())?;
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    let mut mixer = state.lock_mixer()?;
+    mixer.routing.remove_mix(&name).map_err(|e| e.to_string())?;
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
-/// Hardware inputs routed into `mix`. They live only in the routing matrix:
-/// a mix's saved members are software channels.
-pub(crate) fn hardware_members(
-    routing: &crate::routing_model::RoutingModel,
-    mix: &str,
-) -> Vec<String> {
-    routing
-        .inputs
-        .iter()
-        .filter(|input| input.kind == crate::routing_model::InputKind::Hardware)
-        .filter(|input| {
-            routing
-                .routes
-                .get(&input.id)
-                .and_then(|cells| cells.get(mix))
-                .is_some_and(|cell| cell.enabled)
-        })
-        .map(|input| input.id.clone())
-        .collect()
-}
-
-/// Push a mix's members to the backend, adding the hardware inputs routed
-/// into it. Every membership push goes through here: passing only the saved
-/// software channels would silently unlink hardware inputs (a mic routed to
-/// a mix stayed silent after restart until its cell was toggled).
-pub(crate) fn push_bus_members(
-    state: &AppState,
-    mix: &str,
-    channels: &[String],
-) -> Result<(), crate::error::SinkError> {
-    let mut members = channels.to_vec();
-    if let Ok(mixer) = state.lock_mixer() {
-        for id in hardware_members(&mixer.routing, mix) {
-            if !members.contains(&id) {
-                members.push(id);
-            }
-        }
-    }
-    state.backend.set_bus_members(mix, &members)
-}
-
-/// Replace the channel set a mix carries. For auto-include mixes the stored
-/// value is the complement (unchecked set), so future channels keep flowing in.
-#[tauri::command]
-pub fn set_bus_members(
-    state: State<'_, AppState>,
-    name: String,
-    channels: Vec<String>,
-) -> Result<(), String> {
-    // Validate against the definition set, so a rejected request never reaches
-    // the backend - membership and the persisted definition could diverge.
-    let stored = {
-        let mixer = state.lock_mixer()?;
-        let Some(def) = mixer.buses.get(&name) else {
-            return Err("unknown mix".to_string());
-        };
-        if def.exclude {
-            channel_names(&mixer)
-                .into_iter()
-                .filter(|c| !channels.contains(c))
-                .collect()
-        } else {
-            channels.clone()
-        }
-    };
-    crate::commands::buses::push_bus_members(&state, &name, &channels)
-        .map_err(|e| e.to_string())?;
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .buses
-            .set_members(&name, stored)
-            .map_err(|e| e.to_string())?;
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
-}
-
-/// Switch a mix between manual selection and auto-include mode. The
-/// carried set is preserved; only what happens to future channels changes.
-#[tauri::command]
-pub fn set_bus_exclude(
-    state: State<'_, AppState>,
-    name: String,
-    exclude: bool,
-) -> Result<(), String> {
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        let all = channel_names(&mixer);
-        mixer
-            .buses
-            .set_exclude(&name, exclude, &all)
-            .map_err(|e| e.to_string())?;
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
-}
-
-/// Set a mix's playback level (0-100%) - what recorders hear. Unlike
-/// `set_channel_volume`, this accepts mix nodes, including the master mix.
+/// Set a mix's level (0-100%): what recorders and its outputs hear. Also the
+/// target of `wavesink --set-mix-volume` from the Omarchy audio panel.
 #[tauri::command]
 pub fn set_bus_volume(state: State<'_, AppState>, name: String, volume: u8) -> Result<(), String> {
-    if !is_bus_name(&name) {
+    if state.lock_mixer()?.routing.mix(&name).is_none() {
         return Err(format!("unknown mix: {name}"));
     }
     let volume = volume.min(MAX_VOLUME);
@@ -292,95 +121,24 @@ pub fn set_bus_volume(state: State<'_, AppState>, name: String, volume: u8) -> R
         .backend
         .set_sink_volume(&name, volume)
         .map_err(|e| e.to_string())?;
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .buses
-            .set_volume(&name, volume)
-            .map_err(|e| e.to_string())?;
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    edit_mix(&state, &name, |mix| mix.volume_percent = volume)
 }
 
-/// Mute or unmute a mix for recorders. Persisted, and accepts the master mix.
+/// Mute or unmute a mix for recorders and its outputs. Persisted.
 #[tauri::command]
 pub fn set_bus_mute(state: State<'_, AppState>, name: String, muted: bool) -> Result<(), String> {
-    if !is_bus_name(&name) {
+    if state.lock_mixer()?.routing.mix(&name).is_none() {
         return Err(format!("unknown mix: {name}"));
     }
     state
         .backend
         .set_sink_mute(&name, muted)
         .map_err(|e| e.to_string())?;
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .buses
-            .set_muted(&name, muted)
-            .map_err(|e| e.to_string())?;
-        if let Some(mix) = mixer.routing.mixes.iter_mut().find(|mix| mix.id == name) {
-            mix.muted = muted;
-            mixer.routing.save().map_err(|e| e.to_string())?;
-        }
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
-}
-
-/// The current channel sink names (the "all channels" set for mixes).
-pub(crate) fn channel_names(mixer: &crate::mixer::state::MixerState) -> Vec<String> {
-    mixer.channels.iter().map(|c| c.name.clone()).collect()
+    edit_mix(&state, &name, |mix| mix.muted = muted)
 }
 
 #[cfg(test)]
 mod tests {
-
-    #[test]
-    fn hardware_members_lists_enabled_hardware_routes_only() {
-        use crate::routing_model::{FxChain, InputDef, InputKind, RouteCell, RoutingModel};
-        let input = |id: &str, kind: InputKind| InputDef {
-            id: id.into(),
-            label: id.into(),
-            icon: None,
-            icon_color: None,
-            kind,
-            source_name: id.into(),
-            volume_percent: 100,
-            muted: false,
-            fx: FxChain::default(),
-            order: 0,
-        };
-        let cell = |enabled| RouteCell {
-            enabled,
-            send_percent: 100,
-            muted: false,
-        };
-        let mut model = RoutingModel::default();
-        model.inputs = vec![
-            input("hardware:mic", InputKind::Hardware),
-            input("hardware:cam", InputKind::Hardware),
-            input("sink_game", InputKind::Software),
-        ];
-        for (id, enabled) in [
-            ("hardware:mic", true),
-            ("hardware:cam", false),
-            ("sink_game", true),
-        ] {
-            model
-                .routes
-                .entry(id.into())
-                .or_default()
-                .insert("sink_bus_stream".into(), cell(enabled));
-        }
-        assert_eq!(
-            hardware_members(&model, "sink_bus_stream"),
-            vec!["hardware:mic"]
-        );
-        assert!(hardware_members(&model, "sink_bus_chat").is_empty());
-    }
     use super::*;
     use crate::audio::mock::{Call, MockBackend};
     use crate::persistence::testing::TempConfig;
@@ -393,8 +151,8 @@ mod tests {
         let state = AppState::new(backend);
         let name = {
             let mut mixer = state.lock_mixer().expect("mixer");
-            mixer.init_defaults();
-            mixer.buses.add("Solo").expect("add mix").name
+            mixer.initialized = true;
+            mixer.routing.add_mix("Solo").expect("add mix").id
         };
         (state, name)
     }
@@ -464,7 +222,7 @@ mod tests {
         assert_rebuilds_do_not_interleave(&backend.bus_ops(), &name);
         let mixer = state.lock_mixer().expect("mixer");
         assert_eq!(
-            mixer.buses.get(&name).map(|b| b.label.as_str()),
+            mixer.routing.mix(&name).map(|m| m.label.as_str()),
             Some("Second")
         );
     }

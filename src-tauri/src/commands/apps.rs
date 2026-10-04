@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use serde::Serialize;
 use tauri::State;
 
-use crate::audio::types::is_virtual_sink;
 use crate::persistence::assignments::identity_key;
 use crate::persistence::seen::SeenEntry;
 use crate::state::AppState;
@@ -185,11 +184,11 @@ pub fn set_app_assignment(
     match_value: String,
     sink_name: String,
 ) -> Result<(), String> {
-    if !sink_name.is_empty() && !is_virtual_sink(&sink_name) {
-        return Err(format!("unknown channel: {sink_name}"));
-    }
     let assignments = {
         let mut mixer = state.lock_mixer()?;
+        if !sink_name.is_empty() && !mixer.routing.is_channel(&sink_name) {
+            return Err(format!("unknown channel: {sink_name}"));
+        }
         if sink_name.is_empty() {
             mixer.assignments.remove(&match_prop, &match_value);
         } else {

@@ -81,13 +81,13 @@ export function useAudio() {
   }, [onProfileChanged]);
 
   // The Omarchy audio panel set a mix level through the CLI.
-  const fetchBuses = useMixerStore((s) => s.fetchBuses);
+  const fetchRouting = useMixerStore((s) => s.fetchRouting);
   useEffect(() => {
-    const unlisten = listen("buses-changed", () => void fetchBuses());
+    const unlisten = listen("buses-changed", () => void fetchRouting());
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [fetchBuses]);
+  }, [fetchRouting]);
 
   // Hardware profile auto-switch: when a device with a bound profile
   // appears, load that profile (Sonar-style).

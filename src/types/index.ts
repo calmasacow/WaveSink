@@ -99,25 +99,6 @@ export interface SeenApp {
   alias: string | null;
 }
 
-/** A user-defined mix (record bus). The label is what recorders display. */
-export interface BusDef {
-  name: string;
-  label: string;
-  icon?: string | null;
-  icon_color?: string | null;
-  /** Manual mode: carried channels. Auto-include mode: excluded channels. */
-  channels: string[];
-  /** True = carries everything except `channels`; new channels join automatically. */
-  exclude: boolean;
-  /** Playback level recorders hear (0-100%). Persisted with the mix. */
-  volume_percent: number;
-  /** Muted for recorders (they hear silence). Persisted with the mix. */
-  muted: boolean;
-  /** Per-member send level within this mix (0-100%); a member absent here
-   *  carries at 100%. Keyed by channel sink name or hardware input id. */
-  member_gains: Record<string, number>;
-}
-
 export type InputKind = "software" | "hardware";
 export interface FxChain {
   high_pass_hz: number | null;
@@ -173,7 +154,6 @@ export interface RoutingModel {
   mixes: RoutingMix[];
   routes: Record<string, Record<string, RouteCell>>;
 }
-
 
 /** Profile listing entry; trigger_device auto-loads the profile. */
 export interface ProfileInfo {

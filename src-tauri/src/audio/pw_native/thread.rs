@@ -716,6 +716,11 @@ fn on_node(
     // is metered through its monitor, like a channel.
     if (media_class == VIRTUAL_SOURCE_CLASS || media_class == SINK_CLASS) && is_bus_name(&node_name)
     {
+        if let Some(waiters) = s.pending_creates.remove(&node_name) {
+            for reply in waiters {
+                let _ = reply.send(Ok(()));
+            }
+        }
         let from_monitor = media_class == SINK_CLASS;
         if !s.meters.contains_key(&node_name) {
             add_meter(&mut s, core, &node_name, global.id, levels, from_monitor);
@@ -1441,8 +1446,10 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             match create_node_object(&core, &name, &label, kind) {
                 Ok(proxy) => {
                     s.desired.insert(name.clone(), (label, kind));
-                    s.bus_sources.insert(name, proxy);
-                    let _ = reply.send(Ok(()));
+                    s.bus_sources.insert(name.clone(), proxy);
+                    // Reply once the node exists, like a channel: a level or
+                    // member set right after must find it.
+                    s.pending_creates.entry(name).or_default().push(reply);
                 }
                 Err(e) => {
                     let _ = reply.send(Err(SinkError::Config(format!("create bus: {e}"))));

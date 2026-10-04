@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::persistence::channels::ChannelDef;
 use crate::persistence::profiles::{self, Profile, ProfileInfo};
+use crate::routing_model::InputKind;
 use crate::state::AppState;
 
 /// Persist the current mixer state into the active profile, if any.
@@ -10,17 +10,8 @@ pub fn autosave_active(mixer: &crate::mixer::state::MixerState) {
     let Some(name) = &mixer.active_profile else {
         return;
     };
-    let profile = Profile {
-        name: name.clone(),
-        channels: mixer.channels.clone(),
-        assignments: mixer.assignments.clone(),
-        outputs: mixer.outputs.clone(),
-        eq: mixer.eq.clone(),
-        // Preserved from the cache rather than re-read from disk each mutation.
-        trigger_device: mixer.active_trigger.clone(),
-        buses: mixer.buses.clone(),
-        routing: mixer.routing.clone(),
-    };
+    // The trigger comes from the cache rather than a disk re-read each mutation.
+    let profile = Profile::snapshot(name, mixer, mixer.active_trigger.clone());
     if let Err(e) = profiles::save(&profile) {
         eprintln!("wavesink: autosave of profile {name} failed: {e}");
     }
@@ -74,8 +65,8 @@ pub fn set_profile_trigger(
     Ok(())
 }
 
-/// Apply a saved profile: reconcile channels, then clear the auto-route
-/// ledger so routing re-enforces on the next poll.
+/// Apply a saved profile: tear down what it doesn't have, bring up its whole
+/// graph, then clear the auto-route ledger so routing re-enforces.
 #[tauri::command]
 pub fn load_profile(
     app: tauri::AppHandle,
@@ -95,198 +86,94 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let profile = profiles::load(&name).map_err(|e| e.to_string())?;
-    if profile.channels.is_empty() {
+    let target = profile.routing.clone();
+    if target.channels().next().is_none() {
         return Err(format!("profile {name} has no channels"));
     }
-
-    // ---- layout reconciliation ----
-    let current: Vec<ChannelDef> = {
+    let _rebuild = state.lock_bus_rebuild();
+    let (current, prefs) = {
         let mixer = state.lock_mixer()?;
-        mixer.channel_defs.channels.clone()
+        (mixer.routing.clone(), mixer.prefs.clone())
     };
-    let prefs = state.lock_mixer()?.prefs.clone();
-    for channel in &profile.channels {
-        if !current.iter().any(|c| c.name == channel.name) {
-            state
-                .backend
-                .create_virtual_sink(&channel.name, &prefs.decorate(&channel.label))
-                .map_err(|e| e.to_string())?;
+
+    // ---- tear down what the profile doesn't have ----
+    for old in current.channels() {
+        if target.is_channel(&old.id) {
+            continue;
         }
-    }
-    for old in &current {
-        if !profile.channels.iter().any(|c| c.name == old.name) {
-            // Evacuate this channel's streams before destroying it.
-            if let Ok(streams) = state.backend.list_app_streams() {
-                for stream in streams {
-                    if stream.assigned_sink.as_deref() == Some(old.name.as_str()) {
-                        let _ = state.backend.move_stream_to_sink(stream.index, "");
-                    }
+        // Evacuate this channel's streams before destroying it.
+        if let Ok(streams) = state.backend.list_app_streams() {
+            for stream in streams {
+                if stream.assigned_sink.as_deref() == Some(old.id.as_str()) {
+                    let _ = state.backend.move_stream_to_sink(stream.index, "");
                 }
             }
-            if let Err(e) = state.backend.destroy_virtual_sink(&old.name) {
-                eprintln!("wavesink: removing {} for profile failed: {e}", old.name);
+        }
+        if let Err(e) = state.backend.destroy_virtual_sink(&old.id) {
+            eprintln!("wavesink: removing {} for profile failed: {e}", old.id);
+        }
+    }
+    for old in current
+        .inputs
+        .iter()
+        .filter(|i| i.kind == InputKind::Hardware && target.input(&i.id).is_none())
+    {
+        if let Err(e) = state.backend.remove_hardware_input(&old.id) {
+            eprintln!("wavesink: removing {} for profile failed: {e}", old.id);
+        }
+    }
+    for old in &current.mixes {
+        if target.mix(&old.id).is_none() {
+            if let Err(e) = state.backend.destroy_bus(&old.id) {
+                eprintln!("wavesink: removing mix {} for profile failed: {e}", old.id);
             }
         }
     }
 
-    // ---- channel state ----
-    for channel in &profile.channels {
-        state
-            .backend
-            .set_sink_volume(&channel.name, channel.volume_percent)
-            .map_err(|e| e.to_string())?;
-        state
-            .backend
-            .set_sink_mute(&channel.name, channel.muted)
-            .map_err(|e| e.to_string())?;
-        // EQ: non-fatal - one channel's insert failing
-        // must not abort the whole profile load.
-        if let Err(e) = state
-            .backend
-            .set_channel_eq(&channel.name, &profile.eq.get(&channel.name))
-        {
-            eprintln!("wavesink: profile eq for {} failed: {e}", channel.name);
-        }
-    }
+    // ---- bring up everything it does ----
+    crate::commands::graph::bring_up(state, &target, &profile.eq, &prefs)?;
 
-    // ---- mix bus reconciliation ----
-    let _rebuild = state.lock_bus_rebuild();
-    let mut target_buses = profile.buses.clone();
-    let names: Vec<String> = profile.channels.iter().map(|c| c.name.clone()).collect();
-    target_buses
-        .buses
-        .retain(|bus| !(bus.name == "sink_stream" && bus.label == "Master Mix"));
-    let current_buses = {
-        let mixer = state.lock_mixer()?;
-        mixer.buses.clone()
-    };
-    for old in &current_buses.buses {
-        if target_buses.get(&old.name).is_none() {
-            if let Err(e) = state.backend.destroy_bus(&old.name) {
-                eprintln!(
-                    "wavesink: removing mix {} for profile failed: {e}",
-                    old.name
-                );
-            }
-        }
-    }
-    for bus in &target_buses.buses {
-        // A mix already live is reused; only missing ones are created.
-        if current_buses.get(&bus.name).is_none() {
-            if let Err(e) = state
-                .backend
-                .create_bus(&bus.name, &prefs.decorate(&bus.label))
-            {
-                eprintln!("wavesink: profile mix {} failed: {e}", bus.name);
-                continue;
-            }
-        }
-        // Hardware routes come from the incoming profile: the live routing
-        // model is only swapped in after this loop.
-        let mut members = bus.effective_members(&names);
-        for id in crate::commands::buses::hardware_members(&profile.routing, &bus.name) {
-            if !members.contains(&id) {
-                members.push(id);
-            }
-        }
-        if let Err(e) = state.backend.set_bus_members(&bus.name, &members) {
-            eprintln!("wavesink: profile members for mix {} failed: {e}", bus.name);
-        }
-        crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
-        crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
-        if let Some(mix) = profile.routing.mixes.iter().find(|mix| mix.id == bus.name) {
-            if let Err(e) = state
-                .backend
-                .set_mix_outputs(&bus.name, &mix.output_bindings)
-            {
-                eprintln!(
-                    "wavesink: profile output routing for {} failed: {e}",
-                    bus.name
-                );
-            }
-        }
-    }
-
-    let (defs, assignments, outputs, eq) = {
+    let assignments = {
         let mut mixer = state.lock_mixer()?;
-        mixer.buses = target_buses.clone();
-        mixer.channel_defs = crate::persistence::channels::Channels {
-            channels: profile
-                .channels
-                .iter()
-                .map(|c| ChannelDef {
-                    name: c.name.clone(),
-                    label: c.label.clone(),
-                    icon: c.icon.clone(),
-                    icon_color: c.icon_color.clone(),
-                    // Carry levels into the persisted defs so channels.json
-                    // stays the single source of truth.
-                    volume_percent: c.volume_percent,
-                    muted: c.muted,
-                })
-                .collect(),
-        };
-        mixer.channels = profile.channels.clone();
+        mixer.routing = target.clone();
         mixer.assignments = profile.assignments.clone();
-        mixer.outputs = profile.outputs.clone();
         mixer.eq = profile.eq.clone();
-        mixer.routing = if profile.routing.mixes.is_empty() {
-            crate::routing_model::RoutingModel::from_legacy(
-                &mixer.channel_defs,
-                &mixer.buses,
-                &profile.outputs,
-            )
-        } else {
-            profile.routing.clone()
-        };
         mixer.auto_routed.clear();
-        (
-            mixer.channel_defs.clone(),
-            mixer.assignments.clone(),
-            mixer.outputs.clone(),
-            mixer.eq.clone(),
-        )
+        mixer.assignments.clone()
     };
-
-    defs.save().map_err(|e| e.to_string())?;
+    target.save().map_err(|e| e.to_string())?;
     assignments.save().map_err(|e| e.to_string())?;
-    outputs.save().map_err(|e| e.to_string())?;
-    eq.save().map_err(|e| e.to_string())?;
-    target_buses.save().map_err(|e| e.to_string())?;
+    profile.eq.save().map_err(|e| e.to_string())?;
     // The loaded profile becomes the live-bound (autosaving) one.
     set_active(state, Some(name))?;
     Ok(())
 }
 
 /// Create a profile with a clean slate: the classic four channels at
-/// 100%/unmuted. Saved but not applied - load it to start fresh.
+/// 100%/unmuted in one mix. Saved but not applied - load it to start fresh.
 #[tauri::command]
 pub fn create_blank_profile(app: tauri::AppHandle, name: String) -> Result<(), String> {
     let name = profiles::sanitize_name(&name).map_err(|e| e.to_string())?;
     if profiles::load(&name).is_ok() {
         return Err(format!("profile \"{name}\" already exists"));
     }
-    let channels = crate::persistence::channels::Channels::default()
-        .channels
-        .into_iter()
-        .map(|def| crate::audio::types::VirtualSink {
-            name: def.name,
-            label: def.label,
-            icon: def.icon,
-            icon_color: def.icon_color,
-            volume_percent: 100,
-            muted: false,
-        })
-        .collect();
+    // The starter layout: the classic channels, all in one mix that plays
+    // to the system default output.
+    let mut routing = crate::routing_model::RoutingModel::from_legacy(
+        &crate::persistence::channels::Channels::default(),
+        &crate::persistence::buses::Buses::default(),
+        &Default::default(),
+    );
+    routing.ensure_an_output();
     let profile = Profile {
         name,
-        channels,
+        routing,
         assignments: Default::default(),
-        outputs: Default::default(),
         eq: Default::default(),
         trigger_device: None,
+        channels: Vec::new(),
         buses: Default::default(),
-        routing: Default::default(),
+        outputs: Default::default(),
     };
     profiles::save(&profile).map_err(|e| e.to_string())?;
     crate::refresh_tray(&app);

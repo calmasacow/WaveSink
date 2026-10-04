@@ -1,28 +1,21 @@
 use std::collections::HashSet;
 
-use crate::audio::types::{AppStream, VirtualSink};
+use crate::audio::types::AppStream;
 use crate::persistence::aliases::Aliases;
 use crate::persistence::assignments::Assignments;
-use crate::persistence::channels::Channels;
 
-/// In-memory mixer state: the source of truth for channel volume/mute as
-/// set through the UI, plus the persistent app→channel assignments.
+/// In-memory mixer state: the routing model (the one source of truth for
+/// inputs, mixes and routes) plus app assignments, EQ, profiles and prefs.
 #[derive(Debug, Default)]
 pub struct MixerState {
-    /// Wave Link-style input×mix state. Legacy channel/bus fields are kept as
-    /// compatibility projections while the PipeWire graph is migrated.
+    /// Inputs, mixes and every input×mix cell, persisted as routing.json.
     pub routing: crate::routing_model::RoutingModel,
-    pub channels: Vec<VirtualSink>,
-    /// User-defined channel set (persisted to disk).
-    pub channel_defs: Channels,
     /// True once `init_virtual_devices` has created the sinks.
     pub initialized: bool,
     /// Saved app→channel assignments (persisted to disk + WirePlumber conf).
     pub assignments: Assignments,
     /// User-chosen display names for discovered apps (persisted to disk).
     pub aliases: Aliases,
-    /// Per-channel output device choices (persisted to disk).
-    pub outputs: crate::persistence::outputs::ChannelOutputs,
     /// Per-channel parametric EQ configs (persisted to disk).
     pub eq: crate::persistence::eq::ChannelEq,
     /// Every app identity ever observed (history + ignore list).
@@ -36,8 +29,6 @@ pub struct MixerState {
     /// Cached trigger device of `active_profile`, so autosave preserves it
     /// without re-reading the profile file on every mutation.
     pub active_trigger: Option<String>,
-    /// User-defined mixes (record buses), persisted to disk.
-    pub buses: crate::persistence::buses::Buses,
     /// App preferences (device naming etc.), persisted to disk.
     pub prefs: crate::persistence::prefs::Prefs,
     /// Streams already auto-routed once, by `object.serial` (node ids
@@ -46,29 +37,6 @@ pub struct MixerState {
 }
 
 impl MixerState {
-    /// Populate the channel strips, each restored to its persisted volume/mute
-    /// (100%/unmuted if the channel has never been touched).
-    pub fn init_defaults(&mut self) {
-        self.channels = self
-            .channel_defs
-            .channels
-            .iter()
-            .map(|def| VirtualSink {
-                name: def.name.clone(),
-                label: def.label.clone(),
-                icon: def.icon.clone(),
-                icon_color: def.icon_color.clone(),
-                volume_percent: def.volume_percent,
-                muted: def.muted,
-            })
-            .collect();
-        self.initialized = true;
-    }
-
-    pub fn channel_mut(&mut self, sink_name: &str) -> Option<&mut VirtualSink> {
-        self.channels.iter_mut().find(|c| c.name == sink_name)
-    }
-
     /// Forget history entries the user never acted on and hasn't seen in a
     /// week; returns true when something changed and should be persisted.
     pub fn prune_stale_apps(&mut self, now: u64) -> bool {
@@ -131,28 +99,24 @@ impl MixerState {
     }
 
     pub fn reset(&mut self) {
-        self.channels.clear();
         self.initialized = false;
+    }
+
+    /// Test setup: the classic four channels in one mix, sinks "created".
+    #[cfg(test)]
+    pub fn init_test_defaults(&mut self) {
+        self.routing = crate::routing_model::RoutingModel::from_legacy(
+            &crate::persistence::channels::Channels::default(),
+            &crate::persistence::buses::Buses::default(),
+            &Default::default(),
+        );
+        self.initialized = true;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn init_defaults_creates_four_channels() {
-        let mut state = MixerState::default();
-        state.init_defaults();
-        assert_eq!(state.channels.len(), 4);
-        assert!(state.initialized);
-        assert_eq!(state.channels[0].name, "sink_game");
-        assert_eq!(state.channels[0].label, "Game");
-        assert!(state
-            .channels
-            .iter()
-            .all(|c| c.volume_percent == 100 && !c.muted));
-    }
 
     #[test]
     fn prune_stale_apps_exempts_assigned_and_aliased() {
@@ -199,7 +163,7 @@ mod tests {
     #[test]
     fn auto_route_plans_once_and_respects_a_manual_move() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -219,7 +183,7 @@ mod tests {
     #[test]
     fn auto_route_skips_a_stream_already_on_target() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -245,7 +209,7 @@ mod tests {
     #[test]
     fn auto_route_reroutes_a_restarted_stream_on_a_recycled_node_id() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -265,7 +229,7 @@ mod tests {
     #[test]
     fn auto_route_leaves_an_unsettled_stream_for_the_next_tick() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -286,7 +250,7 @@ mod tests {
         // Bug shape: a rule keyed on the stream's own media.name must still
         // apply.
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("media.name", "audio-src", "sink_music");
@@ -304,7 +268,7 @@ mod tests {
         // Bug shape: a cleared rule must not be revived by its adopted legacy
         // rule.
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Discord", "sink_voice");
@@ -319,20 +283,11 @@ mod tests {
     #[test]
     fn auto_route_ledger_forgets_dead_streams() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state.plan_auto_routes(&[stream(1, 10, "A", None), stream(2, 11, "B", None)]);
         assert_eq!(state.auto_routed.len(), 2);
         state.plan_auto_routes(&[stream(1, 10, "A", None)]);
         assert_eq!(state.auto_routed, HashSet::from([10]));
     }
 
-    #[test]
-    fn channel_mut_finds_by_name() {
-        let mut state = MixerState::default();
-        state.init_defaults();
-        let chat = state.channel_mut("sink_chat").expect("chat channel exists");
-        chat.volume_percent = 85;
-        assert_eq!(state.channels[1].volume_percent, 85);
-        assert!(state.channel_mut("sink_nope").is_none());
-    }
 }

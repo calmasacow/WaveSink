@@ -1,10 +1,9 @@
 use tauri::State;
 
-use crate::audio::types::VirtualSink;
 use crate::state::AppState;
 
-/// Create a new channel from a label and icon (sink name is generated).
-/// The new channel starts at 100%, unmuted, following the default output.
+/// Create a new channel from a label and icon (sink name is generated). It
+/// starts at 100%, unmuted and in no mix: tick its cells to route it.
 #[tauri::command]
 pub fn add_channel(
     state: State<'_, AppState>,
@@ -12,79 +11,52 @@ pub fn add_channel(
     icon: Option<String>,
     icon_color: Option<String>,
 ) -> Result<(), String> {
-    let (def, defs) = {
+    let (channel, prefs) = {
         let mut mixer = state.lock_mixer()?;
-        let def = mixer
-            .channel_defs
-            .add(&label, icon, icon_color)
+        let channel = mixer
+            .routing
+            .add_channel(&label, icon, icon_color)
             .map_err(|e| e.to_string())?;
-        (def, mixer.channel_defs.clone())
+        (channel, mixer.prefs.clone())
     };
 
-    let prefs = state.lock_mixer()?.prefs.clone();
     if let Err(e) = (|| {
         state
             .backend
-            .create_virtual_sink(&def.name, &prefs.decorate(&def.label))?;
-        state.backend.set_sink_volume(&def.name, 100)?;
-        state.backend.set_sink_mute(&def.name, false)
+            .create_virtual_sink(&channel.id, &prefs.decorate(&channel.label))?;
+        state.backend.set_sink_volume(&channel.id, 100)?;
+        state.backend.set_sink_mute(&channel.id, false)
     })() {
-        // Roll back so config matches reality: destroy the sink if it got
-        // created (idempotent if it didn't), then drop the definition.
-        let _ = state.backend.destroy_virtual_sink(&def.name);
+        // Roll back so the model matches reality: destroy the sink if it got
+        // created (idempotent if it didn't), then drop the channel.
+        let _ = state.backend.destroy_virtual_sink(&channel.id);
         let mut mixer = state.lock_mixer()?;
-        let _ = mixer.channel_defs.remove(&def.name);
+        let _ = mixer.routing.remove_input(&channel.id);
         return Err(e.to_string());
     }
 
-    defs.save().map_err(|e| e.to_string())?;
-    let (buses, names) = {
-        let mut mixer = state.lock_mixer()?;
-        mixer.channels.push(VirtualSink {
-            name: def.name,
-            label: def.label,
-            icon: def.icon,
-            icon_color: def.icon_color,
-            volume_percent: 100,
-            muted: false,
-        });
-        let names = crate::commands::buses::channel_names(&mixer);
-        crate::commands::profiles::autosave_active(&mixer);
-        (mixer.buses.clone(), names)
-    };
-    // The master and every auto-include mix pick the new channel up.
-    for bus in &buses.buses {
-        let members = bus.effective_members(&names);
-        if members.contains(&names[names.len() - 1]) {
-            if let Err(e) = crate::commands::buses::push_bus_members(&state, &bus.name, &members) {
-                eprintln!("wavesink: membership for mix {} failed: {e}", bus.name);
-            }
-        }
-    }
-    buses.save().map_err(|e| e.to_string())?;
+    let mixer = state.lock_mixer()?;
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
     Ok(())
 }
 
-/// Reorder the channel strips (cosmetic - no audio plumbing changes).
-#[tauri::command]
-pub fn reorder_channels(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
+/// Apply a change to one channel's presentation and persist it.
+fn edit_channel(
+    state: &AppState,
+    sink_name: &str,
+    edit: impl FnOnce(&mut crate::routing_model::InputDef),
+) -> Result<(), String> {
+    let mut mixer = state.lock_mixer()?;
+    edit(
         mixer
-            .channel_defs
-            .reorder(&order)
-            .map_err(|e| e.to_string())?;
-        // Keep the live strip list in the same order.
-        mixer.channels.sort_by_key(|c| {
-            order
-                .iter()
-                .position(|n| n == &c.name)
-                .unwrap_or(usize::MAX)
-        });
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+            .routing
+            .channel_mut(sink_name)
+            .map_err(|e| e.to_string())?,
+    );
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
 /// Change a channel's strip icon.
@@ -94,20 +66,8 @@ pub fn set_channel_icon(
     sink_name: String,
     icon: String,
 ) -> Result<(), String> {
-    let icon = if icon.is_empty() { None } else { Some(icon) };
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .channel_defs
-            .set_icon(&sink_name, icon.clone())
-            .map_err(|e| e.to_string())?;
-        if let Some(channel) = mixer.channel_mut(&sink_name) {
-            channel.icon = icon;
-        }
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    let icon = (!icon.is_empty()).then_some(icon);
+    edit_channel(&state, &sink_name, |c| c.icon = icon)
 }
 
 #[tauri::command]
@@ -116,60 +76,44 @@ pub fn set_channel_icon_color(
     sink_name: String,
     icon_color: String,
 ) -> Result<(), String> {
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        let color = if icon_color.is_empty() {
-            None
-        } else {
-            Some(icon_color)
-        };
-        mixer
-            .channel_defs
-            .set_icon_color(&sink_name, color.clone())
-            .map_err(|e| e.to_string())?;
-        if let Some(channel) = mixer.channel_mut(&sink_name) {
-            channel.icon_color = color;
-        }
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    let color = (!icon_color.is_empty()).then_some(icon_color);
+    edit_channel(&state, &sink_name, |c| c.icon_color = color)
 }
 
 /// Rename a channel's display label (the sink name stays stable, so
-/// assignments, outputs and profiles keep working).
+/// assignments and profiles keep working).
 #[tauri::command]
 pub fn rename_channel(
     state: State<'_, AppState>,
     sink_name: String,
     label: String,
 ) -> Result<(), String> {
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .channel_defs
-            .rename(&sink_name, &label)
-            .map_err(|e| e.to_string())?;
-        if let Some(channel) = mixer.channel_mut(&sink_name) {
-            channel.label = label.trim().to_string();
-        }
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.channel_defs.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
+    let mut mixer = state.lock_mixer()?;
+    if !mixer.routing.is_channel(&sink_name) {
+        return Err(format!("unknown channel: {sink_name}"));
+    }
+    mixer
+        .routing
+        .rename_input(&sink_name, &label)
+        .map_err(|e| e.to_string())?;
+    mixer.routing.save().map_err(|e| e.to_string())?;
+    crate::commands::profiles::autosave_active(&mixer);
+    Ok(())
 }
 
 /// Delete a channel: streams on it return to the default sink, its
-/// assignments are dropped, and the sink is destroyed.
+/// assignments, EQ and cells are dropped, and the sink is destroyed.
 #[tauri::command]
 pub fn remove_channel(state: State<'_, AppState>, sink_name: String) -> Result<(), String> {
-    // Validate against the definition set first (also enforces "keep one").
+    // Validate first (also enforces "keep one").
     {
-        let mut mixer = state.lock_mixer()?;
-        mixer
-            .channel_defs
-            .remove(&sink_name)
-            .map_err(|e| e.to_string())?;
+        let mixer = state.lock_mixer()?;
+        if !mixer.routing.is_channel(&sink_name) {
+            return Err(format!("unknown channel: {sink_name}"));
+        }
+        if mixer.routing.channels().count() <= 1 {
+            return Err("at least one channel is required".into());
+        }
     }
 
     // Hand the channel's streams back to the default sink before the rug
@@ -189,44 +133,33 @@ pub fn remove_channel(state: State<'_, AppState>, sink_name: String) -> Result<(
         .destroy_virtual_sink(&sink_name)
         .map_err(|e| e.to_string())?;
 
-    let (defs, assignments, outputs, eq, buses, names) = {
+    let (model, assignments, eq) = {
         let mut mixer = state.lock_mixer()?;
-        mixer.channels.retain(|c| c.name != sink_name);
+        mixer
+            .routing
+            .remove_input(&sink_name)
+            .map_err(|e| e.to_string())?;
         mixer
             .assignments
             .assignments
             .retain(|a| a.sink_name != sink_name);
-        mixer.outputs.remove(&sink_name);
-        // The backend's DestroySink already tore down the live insert;
-        // this drops the persisted config with the channel.
+        // The backend's DestroySink already tore down the live insert; this
+        // drops the persisted config with the channel.
         mixer.eq.remove(&sink_name);
-        // Drop the channel from every mix's membership too.
-        mixer.buses.remove_channel(&sink_name);
         // Re-evaluate auto-routing with the channel gone.
         mixer.auto_routed.clear();
         crate::commands::profiles::autosave_active(&mixer);
         (
-            mixer.channel_defs.clone(),
+            mixer.routing.clone(),
             mixer.assignments.clone(),
-            mixer.outputs.clone(),
             mixer.eq.clone(),
-            mixer.buses.clone(),
-            crate::commands::buses::channel_names(&mixer),
         )
     };
 
-    for bus in &buses.buses {
-        let _ = crate::commands::buses::push_bus_members(
-            &state,
-            &bus.name,
-            &bus.effective_members(&names),
-        );
+    for mix in &model.mixes {
+        let _ = crate::commands::graph::apply_mix_routes(&state, &model, &mix.id);
     }
-
-    defs.save().map_err(|e| e.to_string())?;
+    model.save().map_err(|e| e.to_string())?;
     assignments.save().map_err(|e| e.to_string())?;
-    outputs.save().map_err(|e| e.to_string())?;
-    eq.save().map_err(|e| e.to_string())?;
-    buses.save().map_err(|e| e.to_string())?;
-    Ok(())
+    eq.save().map_err(|e| e.to_string())
 }

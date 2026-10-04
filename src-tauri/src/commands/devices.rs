@@ -12,11 +12,10 @@ use crate::state::AppState;
 /// How often the poll force-saves app history to refresh `last_seen` on disk.
 const SEEN_FLUSH_SECS: u64 = 15 * 60;
 
-/// Current channel state (volume/mute as tracked by MixerState).
+/// The software channels (strips apps play into), from the routing model.
 #[tauri::command]
 pub fn get_virtual_devices(state: State<'_, AppState>) -> Result<Vec<VirtualSink>, String> {
-    let mixer = state.lock_mixer()?;
-    Ok(mixer.channels.clone())
+    Ok(state.lock_mixer()?.routing.channel_list())
 }
 
 /// All running app audio streams.
@@ -276,155 +275,29 @@ pub fn get_output_devices(state: State<'_, AppState>) -> Result<Vec<OutputDevice
         .map_err(|e| e.to_string())
 }
 
-/// Create the user's virtual sinks and reset them to 100%, unmuted.
-/// Idempotent: safe to call again if the sinks already exist.
+/// Build the audio graph from the routing model: channels, hardware inputs,
+/// mixes and their outputs. Idempotent: existing nodes are adopted.
 #[tauri::command]
 pub fn init_virtual_devices(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let (defs, prefs) = {
-        let mixer = state.lock_mixer()?;
-        let _ = mixer.buses.save();
-        (mixer.channel_defs.clone(), mixer.prefs.clone())
-    };
-
-    for def in &defs.channels {
-        state
-            .backend
-            .create_virtual_sink(&def.name, &prefs.decorate(&def.label))
-            .map_err(|e| e.to_string())?;
-        // Restore the saved level - an adopted sink from a previous run may
-        // carry a stale volume/mute, so this is a set, not a "leave it alone".
-        state
-            .backend
-            .set_sink_volume(&def.name, def.volume_percent)
-            .map_err(|e| e.to_string())?;
-        state
-            .backend
-            .set_sink_mute(&def.name, def.muted)
-            .map_err(|e| e.to_string())?;
-    }
-
-    let (eq, buses, mix_outputs, hardware_inputs) = {
+    let (model, eq, prefs) = {
         let mut mixer = state.lock_mixer()?;
-        mixer.init_defaults();
-        // Refresh the matrix's compatibility projection after the starter
-        // Personal/Chat mixes have been materialized.
-        let legacy = crate::routing_model::RoutingModel::from_legacy(
-            &mixer.channel_defs,
-            &mixer.buses,
-            &mixer.outputs,
-        );
-        crate::commands::matrix::project_legacy(&mut mixer.routing, &legacy);
-        let mix_mutes = mixer
-            .routing
-            .mixes
-            .iter()
-            .map(|mix| (mix.id.clone(), mix.muted))
-            .collect::<Vec<_>>();
-        for (id, muted) in mix_mutes {
-            let _ = mixer.buses.set_muted(&id, muted);
+        // Channels reach speakers only through mixes; make sure one plays.
+        if mixer.routing.ensure_an_output() {
+            let _ = mixer.routing.save();
         }
-        for (input, cells) in legacy.routes {
-            let target = mixer.routing.routes.entry(input).or_default();
-            for (mix, cell) in cells {
-                target.entry(mix).or_insert(cell);
-            }
-        }
-        mixer.routing.ensure_an_output();
-        let _ = mixer.routing.save();
-        (
-            mixer.eq.clone(),
-            mixer.buses.clone(),
-            mixer
-                .routing
-                .mixes
-                .iter()
-                .map(|mix| (mix.id.clone(), mix.output_bindings.clone()))
-                .collect::<Vec<_>>(),
-            mixer
-                .routing
-                .inputs
-                .iter()
-                .filter(|input| input.kind == crate::routing_model::InputKind::Hardware)
-                .cloned()
-                .collect::<Vec<_>>(),
-        )
+        (mixer.routing.clone(), mixer.eq.clone(), mixer.prefs.clone())
     };
-    if let Err(e) = buses.save() {
-        eprintln!("wavesink: saving mixes failed: {e}");
-    }
-
-    for def in &defs.channels {
-        // Restore saved EQ (only channels that were ever configured; the
-        // loop builds the insert when the sink node appears).
-        if let Some(config) = eq.configs.get(&def.name) {
-            if let Err(e) = state.backend.set_channel_eq(&def.name, config) {
-                eprintln!("wavesink: eq restore for {} failed: {e}", def.name);
-            }
-        }
-    }
-
-    // Hardware inputs first: the mixes below route them and apply their
-    // per-mix gains (a muted cell is gain 0), which the backend only accepts
-    // for inputs it already knows.
-    for input in &hardware_inputs {
-        if let Err(e) = state.backend.set_hardware_input(
-            &input.id,
-            &input.source_name,
-            input.volume_percent,
-            input.muted,
-        ) {
-            eprintln!("wavesink: hardware input {} failed: {e}", input.id);
-        }
-        if input.fx.is_active() {
-            if let Err(e) = state.backend.set_input_fx(&input.id, &input.fx) {
-                eprintln!("wavesink: audio fx for {} failed: {e}", input.id);
-            }
-        }
-    }
-
-    // Bring up the user's mixes and their memberships.
-    let names: Vec<String> = defs.channels.iter().map(|c| c.name.clone()).collect();
-    for bus in &buses.buses {
-        if let Err(e) = state
-            .backend
-            .create_bus(&bus.name, &prefs.decorate(&bus.label))
-        {
-            eprintln!("wavesink: creating mix {} failed: {e}", bus.name);
-            continue;
-        }
-        if let Err(e) = crate::commands::buses::push_bus_members(
-            &state,
-            &bus.name,
-            &bus.effective_members(&names),
-        ) {
-            eprintln!("wavesink: members for mix {} failed: {e}", bus.name);
-        }
-        crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
-        crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
-    }
-    for (mix, bindings) in mix_outputs {
-        if let Err(e) = state.backend.set_mix_outputs(&mix, &bindings) {
-            eprintln!("wavesink: output routing for mix {mix} failed: {e}");
-        }
-    }
+    crate::commands::graph::bring_up(&state, &model, &eq, &prefs)?;
+    state.lock_mixer()?.initialized = true;
 
     // First run: capture the current layout as the "Default" profile, a
     // known-good state to come back to, and make it the active profile.
     if matches!(crate::persistence::profiles::list(), Ok(list) if list.is_empty()) {
         let mut mixer = state.lock_mixer()?;
-        let default = crate::persistence::profiles::Profile {
-            name: "Default".to_string(),
-            channels: mixer.channels.clone(),
-            assignments: mixer.assignments.clone(),
-            outputs: mixer.outputs.clone(),
-            eq: mixer.eq.clone(),
-            trigger_device: None,
-            buses: mixer.buses.clone(),
-            routing: mixer.routing.clone(),
-        };
+        let default = crate::persistence::profiles::Profile::snapshot("Default", &mixer, None);
         match crate::persistence::profiles::save(&default) {
             Ok(()) => {
                 mixer.active_profile = Some(default.name.clone());
@@ -437,17 +310,6 @@ pub fn init_virtual_devices(
     // Profiles/active state may have changed since the tray was built.
     crate::refresh_tray(&app);
     Ok(())
-}
-
-/// Destroy all virtual sinks. Called before the app exits.
-#[tauri::command]
-pub fn teardown_virtual_devices(state: State<'_, AppState>) -> Result<(), String> {
-    let errors = state.teardown_virtual_sinks();
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors.join("; "))
-    }
 }
 
 #[cfg(test)]
@@ -466,7 +328,7 @@ mod tests {
         let state = AppState::new(backend.clone());
         {
             let mut mixer = state.lock_mixer().expect("mixer");
-            mixer.init_defaults();
+            mixer.init_test_defaults();
             mixer
                 .assignments
                 .set("application.name", "Firefox", "sink_game");
@@ -506,7 +368,7 @@ mod tests {
         let state = AppState::new(backend.clone());
         {
             let mut mixer = state.lock_mixer().expect("mixer");
-            mixer.init_defaults();
+            mixer.init_test_defaults();
             mixer
                 .assignments
                 .set("application.name", "Spotify", "sink_music");
@@ -585,7 +447,7 @@ mod tests {
             9, 300, "Spotify", None,
         )]));
         let state = AppState::new(backend.clone());
-        state.lock_mixer().expect("mixer").init_defaults();
+        state.lock_mixer().expect("mixer").init_test_defaults();
 
         let streams = refresh_streams(&state).expect("pass");
         assert!(backend.moves().is_empty());

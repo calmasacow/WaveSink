@@ -16,7 +16,9 @@ use crate::persistence::buses::Buses;
 use crate::persistence::channels::Channels;
 use crate::persistence::outputs::ChannelOutputs;
 
-pub const ROUTING_VERSION: u32 = 1;
+/// 1: the legacy channels/buses files still drove the graph and this file
+/// was a projection of them. 2: this model is the only source of truth.
+pub const ROUTING_VERSION: u32 = 2;
 pub const ROUTING_FILE: &str = "routing.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,19 +236,39 @@ impl RoutingModel {
         Ok(crate::persistence::app_config_dir()?.join(ROUTING_FILE))
     }
 
-    /// Migrate the old channel/bus topology once, keeping the old JSON files
-    /// intact and writing a timestamped backup beside the new contract.
-    pub fn load_or_migrate(channels: &Channels, buses: &Buses, outputs: &ChannelOutputs) -> Self {
+    /// Load the one source of truth for inputs, mixes and routes. Older
+    /// setups migrate once from the original channels/buses/outputs files,
+    /// which are left in place (and backed up) but never written again:
+    /// - no routing.json: the model is built from those files;
+    /// - a version-1 routing.json: those files still owned labels, icons,
+    ///   levels and mutes, so they are folded in; the cells keep what the
+    ///   matrix showed.
+    pub fn load_or_migrate() -> Self {
+        let legacy = || {
+            let channels = Channels::load();
+            let buses = Buses::load(&channels);
+            let outputs = ChannelOutputs::load();
+            Self::from_legacy(&channels, &buses, &outputs)
+        };
         let path = Self::config_path().ok();
-        if let Some(path) = &path {
-            if let Ok(raw) = fs::read_to_string(path) {
-                if let Ok(mut model) = serde_json::from_str::<Self>(&raw) {
-                    model.clamp_levels();
-                    return model;
-                }
+        let saved = path
+            .as_ref()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .and_then(|raw| serde_json::from_str::<Self>(&raw).ok());
+        let mut model = match saved {
+            Some(model) if model.version >= ROUTING_VERSION => {
+                let mut model = model;
+                model.clamp_levels();
+                return model;
             }
-        }
-        let model = Self::from_legacy(channels, buses, outputs);
+            Some(mut model) => {
+                model.fold_legacy(&legacy());
+                model
+            }
+            None => legacy(),
+        };
+        model.version = ROUTING_VERSION;
+        model.clamp_levels();
         if let Some(path) = path {
             if let Some(parent) = path.parent() {
                 let _ = crate::persistence::ensure_private_dir(parent);
@@ -261,6 +283,7 @@ impl RoutingModel {
                     "outputs.json",
                     "mic.json",
                     "eq.json",
+                    "routing.json",
                 ] {
                     let old = parent.join(name);
                     if old.exists() {
@@ -388,7 +411,6 @@ impl RoutingModel {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn cell(&self, input: &str, mix: &str) -> RouteCell {
         self.routes
             .get(input)
@@ -412,6 +434,285 @@ impl RoutingModel {
             },
         );
         Ok(())
+    }
+}
+
+/// A label as a node-name slug: lowercase ASCII words joined by `_`.
+fn slugify(label: &str, fallback: &str) -> String {
+    let slug = label
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    if slug.is_empty() {
+        fallback.to_string()
+    } else {
+        slug
+    }
+}
+
+fn valid_label(label: &str, what: &str) -> Result<String, SinkError> {
+    let label = label.trim();
+    if label.is_empty() || label.len() > 24 {
+        return Err(SinkError::Config(format!(
+            "{what} label must be 1-24 characters"
+        )));
+    }
+    Ok(label.to_string())
+}
+
+impl RoutingModel {
+    /// Fold the original files' view into a version-1 model (see
+    /// `load_or_migrate`): labels, icons, levels and mutes come from them,
+    /// matrix-only state (hardware inputs, mix icons and outputs, order and
+    /// every existing cell) is kept.
+    pub fn fold_legacy(&mut self, legacy: &RoutingModel) {
+        let position = |items: &[String], id: &str| items.iter().position(|x| x == id);
+        let saved_inputs: Vec<String> = self.inputs.iter().map(|i| i.id.clone()).collect();
+        let saved_mixes: Vec<String> = self.mixes.iter().map(|m| m.id.clone()).collect();
+        let extras = self
+            .inputs
+            .iter()
+            .filter(|input| !legacy.inputs.iter().any(|l| l.id == input.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut inputs = legacy.inputs.clone();
+        inputs.extend(extras);
+        let mut mixes: Vec<MixDef> = legacy
+            .mixes
+            .iter()
+            .cloned()
+            .map(|mut mix| {
+                if let Some(saved) = self.mixes.iter().find(|saved| saved.id == mix.id) {
+                    mix.icon = saved.icon.clone();
+                    mix.icon_color = saved.icon_color.clone().or(mix.icon_color);
+                    mix.output_bindings = saved.output_bindings.clone();
+                }
+                mix
+            })
+            .collect();
+        let legacy_inputs: Vec<String> = legacy.inputs.iter().map(|i| i.id.clone()).collect();
+        let legacy_mixes: Vec<String> = legacy.mixes.iter().map(|m| m.id.clone()).collect();
+        inputs.sort_by_key(|i| {
+            position(&saved_inputs, &i.id)
+                .or_else(|| position(&legacy_inputs, &i.id))
+                .unwrap_or(usize::MAX)
+        });
+        mixes.sort_by_key(|m| {
+            position(&saved_mixes, &m.id)
+                .or_else(|| position(&legacy_mixes, &m.id))
+                .unwrap_or(usize::MAX)
+        });
+        self.inputs = inputs;
+        self.mixes = mixes;
+        for (input, cells) in &legacy.routes {
+            let target = self.routes.entry(input.clone()).or_default();
+            for (mix, cell) in cells {
+                target.entry(mix.clone()).or_insert_with(|| cell.clone());
+            }
+        }
+        self.renumber();
+    }
+
+    /// Keep each item's `order` equal to its list position.
+    pub fn renumber(&mut self) {
+        for (index, input) in self.inputs.iter_mut().enumerate() {
+            input.order = index as u32;
+        }
+        for (index, mix) in self.mixes.iter_mut().enumerate() {
+            mix.order = index as u32;
+        }
+    }
+
+    pub fn input(&self, id: &str) -> Option<&InputDef> {
+        self.inputs.iter().find(|i| i.id == id)
+    }
+
+    pub fn input_mut(&mut self, id: &str) -> Result<&mut InputDef, SinkError> {
+        self.inputs
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or_else(|| SinkError::UnknownSink(id.to_string()))
+    }
+
+    /// A software channel (a virtual sink apps play into) by sink name.
+    pub fn channel_mut(&mut self, name: &str) -> Result<&mut InputDef, SinkError> {
+        self.input_mut(name)
+            .ok()
+            .filter(|i| i.kind == InputKind::Software)
+            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))
+    }
+
+    pub fn is_channel(&self, name: &str) -> bool {
+        self.input(name)
+            .is_some_and(|i| i.kind == InputKind::Software)
+    }
+
+    pub fn channels(&self) -> impl Iterator<Item = &InputDef> {
+        self.inputs.iter().filter(|i| i.kind == InputKind::Software)
+    }
+
+    pub fn mix(&self, id: &str) -> Option<&MixDef> {
+        self.mixes.iter().find(|m| m.id == id)
+    }
+
+    pub fn mix_mut(&mut self, id: &str) -> Result<&mut MixDef, SinkError> {
+        self.mixes
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or_else(|| SinkError::UnknownSink(id.to_string()))
+    }
+
+    /// Add a software channel, generating a unique sink name outside the mix
+    /// namespace and the reserved names. It starts in no mix.
+    pub fn add_channel(
+        &mut self,
+        label: &str,
+        icon: Option<String>,
+        icon_color: Option<String>,
+    ) -> Result<InputDef, SinkError> {
+        use crate::persistence::channels::{MAX_CHANNELS, RESERVED_SINK_NAMES};
+        let label = valid_label(label, "channel")?;
+        if self.channels().count() >= MAX_CHANNELS {
+            return Err(SinkError::Config(format!(
+                "at most {MAX_CHANNELS} channels are supported"
+            )));
+        }
+        let mut base = format!("sink_{}", slugify(&label, "channel"));
+        if crate::persistence::buses::is_bus_name(&base) {
+            // "Bus Foo" would slug into the mix namespace; step out of it.
+            base = base.replacen("sink_bus_", "sink_ch_bus_", 1);
+        }
+        let mut name = base.clone();
+        let mut counter = 2;
+        while self.input(&name).is_some() || RESERVED_SINK_NAMES.contains(&name.as_str()) {
+            name = format!("{base}_{counter}");
+            counter += 1;
+        }
+        let input = InputDef {
+            id: name.clone(),
+            label,
+            icon,
+            icon_color,
+            kind: InputKind::Software,
+            source_name: name,
+            volume_percent: default_level(),
+            muted: false,
+            fx: FxChain::default(),
+            order: self.inputs.len() as u32,
+        };
+        self.inputs.push(input.clone());
+        Ok(input)
+    }
+
+    /// Remove any input and its cells. The last software channel stays: apps
+    /// need somewhere to play.
+    pub fn remove_input(&mut self, id: &str) -> Result<InputDef, SinkError> {
+        let input = self
+            .input(id)
+            .cloned()
+            .ok_or_else(|| SinkError::UnknownSink(id.to_string()))?;
+        if input.kind == InputKind::Software && self.channels().count() <= 1 {
+            return Err(SinkError::Config("at least one channel is required".into()));
+        }
+        self.inputs.retain(|i| i.id != id);
+        self.routes.remove(id);
+        self.renumber();
+        Ok(input)
+    }
+
+    pub fn rename_input(&mut self, id: &str, label: &str) -> Result<(), SinkError> {
+        let label = valid_label(label, "channel")?;
+        self.input_mut(id)?.label = label;
+        Ok(())
+    }
+
+    /// Add a mix with a unique node name. It starts empty: nothing is routed
+    /// into a new mix until its cells are checked.
+    pub fn add_mix(&mut self, label: &str) -> Result<MixDef, SinkError> {
+        use crate::persistence::buses::{BUS_PREFIX, MAX_BUSES};
+        let label = valid_label(label, "mix")?;
+        if self.mixes.len() >= MAX_BUSES {
+            return Err(SinkError::Config(format!(
+                "at most {MAX_BUSES} mixes are supported"
+            )));
+        }
+        let base = format!("{BUS_PREFIX}{}", slugify(&label, "mix"));
+        let mut id = base.clone();
+        let mut counter = 2;
+        while self.mix(&id).is_some() {
+            id = format!("{base}_{counter}");
+            counter += 1;
+        }
+        let mix = MixDef {
+            id,
+            label,
+            icon: Some("broadcast".into()),
+            icon_color: Some("purple".into()),
+            volume_percent: default_level(),
+            muted: false,
+            output_bindings: Vec::new(),
+            order: self.mixes.len() as u32,
+        };
+        self.mixes.push(mix.clone());
+        Ok(mix)
+    }
+
+    pub fn remove_mix(&mut self, id: &str) -> Result<MixDef, SinkError> {
+        let mix = self
+            .mix(id)
+            .cloned()
+            .ok_or_else(|| SinkError::UnknownSink(id.to_string()))?;
+        self.mixes.retain(|m| m.id != id);
+        for cells in self.routes.values_mut() {
+            cells.remove(id);
+        }
+        self.renumber();
+        Ok(mix)
+    }
+
+    pub fn rename_mix(&mut self, id: &str, label: &str) -> Result<(), SinkError> {
+        let label = valid_label(label, "mix")?;
+        self.mix_mut(id)?.label = label;
+        Ok(())
+    }
+
+    /// The inputs a mix carries: every input whose cell for it is on.
+    pub fn members(&self, mix: &str) -> Vec<String> {
+        self.inputs
+            .iter()
+            .filter(|i| self.cell(&i.id, mix).enabled)
+            .map(|i| i.id.clone())
+            .collect()
+    }
+
+    /// The level an input is sent into a mix at: its cell's send, or nothing
+    /// when the cell is off or muted.
+    pub fn member_gain(&self, input: &str, mix: &str) -> u8 {
+        let cell = self.cell(input, mix);
+        if cell.enabled && !cell.muted {
+            cell.send_percent
+        } else {
+            0
+        }
+    }
+
+    /// The software channels as the strip list the UI and app routing use.
+    pub fn channel_list(&self) -> Vec<crate::audio::types::VirtualSink> {
+        self.channels()
+            .map(|c| crate::audio::types::VirtualSink {
+                name: c.id.clone(),
+                label: c.label.clone(),
+                icon: c.icon.clone(),
+                icon_color: c.icon_color.clone(),
+                volume_percent: c.volume_percent,
+                muted: c.muted,
+            })
+            .collect()
     }
 }
 
@@ -519,22 +820,23 @@ mod tests {
     }
     use super::*;
 
+    fn legacy_with_mix() -> (Channels, Buses) {
+        let buses: Buses = serde_json::from_str(
+            r#"{"buses":[{"name":"sink_bus_stream","label":"Stream",
+                "channels":["sink_game","sink_chat"],"exclude":false}]}"#,
+        )
+        .unwrap();
+        (Channels::default(), buses)
+    }
+
     #[test]
     fn cells_are_independent_from_each_other() {
-        let channels = Channels::default();
-        let mut buses = Buses::default();
-        let bus = buses.add("Stream").unwrap();
-        buses
-            .set_members(
-                &bus.name,
-                channels.channels.iter().map(|c| c.name.clone()).collect(),
-            )
-            .unwrap();
+        let (channels, buses) = legacy_with_mix();
         let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
         model
             .set_cell(
                 "sink_game",
-                &bus.name,
+                "sink_bus_stream",
                 RouteCell {
                     enabled: true,
                     send_percent: 70,
@@ -542,15 +844,149 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(model.cell("sink_game", &bus.name).send_percent, 70);
+        assert_eq!(model.cell("sink_game", "sink_bus_stream").send_percent, 70);
+        assert!(model.cell("sink_chat", "sink_bus_stream").enabled);
+        assert!(!model.cell("sink_music", "sink_bus_stream").enabled);
+    }
+
+    #[test]
+    fn members_and_gains_come_from_the_cells() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        let cell = |enabled, send_percent, muted| RouteCell {
+            enabled,
+            send_percent,
+            muted,
+        };
+        model
+            .set_cell("sink_chat", "sink_bus_stream", cell(true, 40, false))
+            .unwrap();
+        model
+            .set_cell("sink_music", "sink_bus_stream", cell(true, 100, true))
+            .unwrap();
         assert_eq!(
-            model.cell("sink_chat", &bus.name),
-            RouteCell {
-                enabled: false,
-                send_percent: 100,
-                muted: false
-            }
+            model.members("sink_bus_stream"),
+            vec!["sink_game", "sink_chat", "sink_music"]
         );
+        assert_eq!(model.member_gain("sink_game", "sink_bus_stream"), 100);
+        assert_eq!(model.member_gain("sink_chat", "sink_bus_stream"), 40);
+        assert_eq!(
+            model.member_gain("sink_music", "sink_bus_stream"),
+            0,
+            "muted"
+        );
+        assert_eq!(
+            model.member_gain("sink_system", "sink_bus_stream"),
+            0,
+            "off"
+        );
+    }
+
+    // Bug shape: an auto-include mix stored its *excluded* channels, and a
+    // checked cell was written there as if it were a member, so the matrix
+    // showed a channel routed that the audio never carried. On migration the
+    // cells (what the user saw and set) win; labels and levels come from the
+    // legacy files that owned them.
+    #[test]
+    fn folding_legacy_keeps_the_cells_and_takes_levels() {
+        let channels = Channels::default();
+        let buses: Buses = serde_json::from_str(
+            r#"{"buses":[{"name":"sink_bus_chat","label":"Headphones","volume_percent":76,
+                "channels":["sink_game","sink_chat","sink_music"],"exclude":true}]}"#,
+        )
+        .unwrap();
+        let legacy = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        assert!(!legacy.cell("sink_game", "sink_bus_chat").enabled);
+
+        let mut saved = legacy.clone();
+        saved.version = 1;
+        saved.mixes[0].volume_percent = 100; // stale projection
+        saved.mixes[0].output_bindings = vec![OutputBinding {
+            device: "alsa_output.usb".into(),
+            enabled: true,
+        }];
+        for channel in ["sink_game", "sink_chat", "sink_music", "sink_system"] {
+            saved
+                .set_cell(
+                    channel,
+                    "sink_bus_chat",
+                    RouteCell {
+                        enabled: true,
+                        send_percent: 100,
+                        muted: false,
+                    },
+                )
+                .unwrap();
+        }
+        saved.fold_legacy(&legacy);
+
+        assert_eq!(saved.members("sink_bus_chat").len(), 4, "cells win");
+        assert_eq!(saved.mixes[0].volume_percent, 76, "legacy level wins");
+        assert_eq!(saved.mixes[0].output_bindings.len(), 1, "matrix-only kept");
+    }
+
+    #[test]
+    fn new_channels_get_unique_safe_names_and_start_unrouted() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        let added = model
+            .add_channel("Voice Chat!", Some("mic".into()), None)
+            .unwrap();
+        assert_eq!(added.id, "sink_voice_chat");
+        assert_eq!(added.icon.as_deref(), Some("mic"));
+        assert!(model
+            .members("sink_bus_stream")
+            .iter()
+            .all(|m| m != &added.id));
+        let again = model.add_channel("Voice Chat", None, None).unwrap();
+        assert_eq!(again.id, "sink_voice_chat_2");
+        // Reserved collision: label "Mic" must not produce sink_mic.
+        assert_eq!(
+            model.add_channel("Mic", None, None).unwrap().id,
+            "sink_mic_2"
+        );
+        // All-special-char labels fall back; whitespace-only is rejected.
+        assert_eq!(
+            model.add_channel("!!!", None, None).unwrap().id,
+            "sink_channel"
+        );
+        assert!(model.add_channel("   ", None, None).is_err());
+        // "Bus Foo" must not land in the mix namespace.
+        let bus_like = model.add_channel("Bus Foo", None, None).unwrap();
+        assert_eq!(bus_like.id, "sink_ch_bus_foo");
+        assert!(!crate::persistence::buses::is_bus_name(&bus_like.id));
+    }
+
+    #[test]
+    fn the_last_channel_stays_and_removal_drops_its_cells() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        model.remove_input("sink_game").unwrap();
+        assert!(model.routes.get("sink_game").is_none());
+        assert!(!model
+            .members("sink_bus_stream")
+            .contains(&"sink_game".to_string()));
+        model.remove_input("sink_chat").unwrap();
+        model.remove_input("sink_music").unwrap();
+        assert!(
+            model.remove_input("sink_system").is_err(),
+            "last channel stays"
+        );
+    }
+
+    #[test]
+    fn new_mixes_start_empty_and_removal_drops_their_cells() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        let mix = model.add_mix("Discord").unwrap();
+        assert_eq!(mix.id, "sink_bus_discord");
+        assert!(model.members(&mix.id).is_empty());
+        model.remove_mix("sink_bus_stream").unwrap();
+        assert!(model
+            .routes
+            .values()
+            .all(|cells| !cells.contains_key("sink_bus_stream")));
+        assert!(model.remove_mix("sink_bus_nope").is_err());
     }
 
     #[test]

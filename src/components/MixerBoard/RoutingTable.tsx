@@ -22,7 +22,6 @@ const blankCell: RouteCell = { enabled: false, send_percent: 100, muted: false }
 export function RoutingTable() {
   const routing = useMixerStore((s) => s.routing);
   const channels = useMixerStore((s) => s.channels);
-  const buses = useMixerStore((s) => s.buses);
   const outputs = useMixerStore((s) => s.outputDevices);
   const inputDevices = useMixerStore((s) => s.inputDevices);
   const setRouteCell = useMixerStore((s) => s.setRouteCell);
@@ -64,21 +63,7 @@ export function RoutingTable() {
   const [reordering, setReordering] = useState<{ kind: "input" | "mix"; id: string } | null>(null);
   const hold = useRef<number | null>(null);
 
-  const mixes = useMemo(
-    () =>
-      routing?.mixes ??
-      buses.map((bus, order) => ({
-        id: bus.name,
-        label: bus.label,
-        icon: "broadcast",
-        icon_color: bus.icon_color ?? "purple",
-        volume_percent: bus.volume_percent,
-        muted: bus.muted,
-        output_bindings: [],
-        order,
-      })),
-    [routing, buses],
-  );
+  const mixes = useMemo(() => routing?.mixes ?? [], [routing]);
   const inputs = useMemo(
     () =>
       routing?.inputs ??
@@ -210,9 +195,7 @@ export function RoutingTable() {
             <MixHeader
               key={mix.id}
               mix={mix}
-              volume={
-                buses.find((bus) => bus.name === mix.id)?.volume_percent ?? mix.volume_percent
-              }
+              volume={mix.volume_percent}
               outputs={outputs}
               reordering={reordering?.kind === "mix" && reordering.id === mix.id}
               onHold={(event) => beginHold("mix", mix.id, event)}

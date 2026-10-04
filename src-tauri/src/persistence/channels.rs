@@ -36,8 +36,9 @@ fn default_volume() -> u8 {
     100
 }
 
-/// The user's channel set, stored as JSON at
-/// `$XDG_CONFIG_HOME/wavesink/channels.json`. Defaults to the classic four.
+/// The original Sink channel set (`$XDG_CONFIG_HOME/wavesink/channels.json`).
+/// Read only to migrate a setup into the routing model, and as the classic
+/// four channels a fresh install or blank profile starts from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Channels {
     pub channels: Vec<ChannelDef>,
@@ -61,23 +62,6 @@ impl Default for Channels {
                 def("sink_system", "System", "desktop_windows"),
             ],
         }
-    }
-}
-
-fn slugify(label: &str) -> String {
-    let slug: String = label
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect::<String>()
-        .split('_')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("_");
-    if slug.is_empty() {
-        "channel".to_string()
-    } else {
-        slug
     }
 }
 
@@ -134,149 +118,6 @@ impl Channels {
         }
         Some(Self { channels })
     }
-
-    pub fn save(&self) -> Result<(), SinkError> {
-        let path = Self::config_path()?;
-        if let Some(parent) = path.parent() {
-            crate::persistence::ensure_private_dir(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| SinkError::Config(format!("serialize channels: {e}")))?;
-        super::write_atomic(&path, &json)?;
-        Ok(())
-    }
-
-    pub fn get(&self, name: &str) -> Option<&ChannelDef> {
-        self.channels.iter().find(|c| c.name == name)
-    }
-
-    pub fn set_icon(&mut self, name: &str, icon: Option<String>) -> Result<(), SinkError> {
-        let def = self
-            .channels
-            .iter_mut()
-            .find(|c| c.name == name)
-            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))?;
-        def.icon = icon;
-        Ok(())
-    }
-
-    pub fn set_icon_color(
-        &mut self,
-        name: &str,
-        icon_color: Option<String>,
-    ) -> Result<(), SinkError> {
-        let def = self
-            .channels
-            .iter_mut()
-            .find(|c| c.name == name)
-            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))?;
-        def.icon_color = icon_color;
-        Ok(())
-    }
-
-    /// Record a channel's fader position so it survives a restart. Unknown
-    /// channels are ignored, not erroring - this runs on every fader tick.
-    pub fn set_volume(&mut self, name: &str, volume_percent: u8) {
-        if let Some(def) = self.channels.iter_mut().find(|c| c.name == name) {
-            def.volume_percent = volume_percent;
-        }
-    }
-
-    /// Record a channel's mute state (see `set_volume` for the lenient
-    /// unknown-channel handling).
-    pub fn set_muted(&mut self, name: &str, muted: bool) {
-        if let Some(def) = self.channels.iter_mut().find(|c| c.name == name) {
-            def.muted = muted;
-        }
-    }
-
-    /// Add a channel for `label`, generating a unique reserved-safe sink
-    /// name. Returns the new definition.
-    pub fn add(
-        &mut self,
-        label: &str,
-        icon: Option<String>,
-        icon_color: Option<String>,
-    ) -> Result<ChannelDef, SinkError> {
-        let label = label.trim();
-        if label.is_empty() || label.len() > 24 {
-            return Err(SinkError::Config(
-                "channel label must be 1-24 characters".into(),
-            ));
-        }
-        if self.channels.len() >= MAX_CHANNELS {
-            return Err(SinkError::Config(format!(
-                "at most {MAX_CHANNELS} channels are supported"
-            )));
-        }
-        let mut base = format!("sink_{}", slugify(label));
-        if crate::persistence::buses::is_bus_name(&base) {
-            // A label like "Bus Foo" would slug straight into the mix-bus
-            // namespace; step out of it instead of disambiguating variants.
-            base = base.replacen("sink_bus_", "sink_ch_bus_", 1);
-        }
-        let mut name = base.clone();
-        let mut counter = 2;
-        while self.get(&name).is_some() || RESERVED_SINK_NAMES.contains(&name.as_str()) {
-            name = format!("{base}_{counter}");
-            counter += 1;
-        }
-        let def = ChannelDef {
-            name,
-            label: label.to_string(),
-            icon,
-            icon_color,
-            volume_percent: default_volume(),
-            muted: false,
-        };
-        self.channels.push(def.clone());
-        Ok(def)
-    }
-
-    pub fn rename(&mut self, name: &str, label: &str) -> Result<(), SinkError> {
-        let label = label.trim();
-        if label.is_empty() || label.len() > 24 {
-            return Err(SinkError::Config(
-                "channel label must be 1-24 characters".into(),
-            ));
-        }
-        let def = self
-            .channels
-            .iter_mut()
-            .find(|c| c.name == name)
-            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))?;
-        def.label = label.to_string();
-        Ok(())
-    }
-
-    /// Reorder the channel set. `order` must contain exactly the current
-    /// sink names (it's a permutation, not an edit).
-    pub fn reorder(&mut self, order: &[String]) -> Result<(), SinkError> {
-        if order.len() != self.channels.len() || !order.iter().all(|n| self.get(n).is_some()) {
-            return Err(SinkError::Config(
-                "reorder must list every existing channel exactly once".into(),
-            ));
-        }
-        self.channels.sort_by_key(|c| {
-            order
-                .iter()
-                .position(|n| n == &c.name)
-                .unwrap_or(usize::MAX)
-        });
-        Ok(())
-    }
-
-    pub fn remove(&mut self, name: &str) -> Result<(), SinkError> {
-        if self.channels.len() <= 1 {
-            return Err(SinkError::Config("at least one channel is required".into()));
-        }
-        let before = self.channels.len();
-        self.channels.retain(|c| c.name != name);
-        if self.channels.len() == before {
-            return Err(SinkError::UnknownSink(name.to_string()));
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -291,45 +132,8 @@ mod tests {
     }
 
     #[test]
-    fn add_generates_unique_safe_names() {
-        let mut c = Channels::default();
-        let d = c
-            .add("Voice Chat!", Some("mic".into()), None)
-            .expect("adds");
-        assert_eq!(d.name, "sink_voice_chat");
-        assert_eq!(d.icon.as_deref(), Some("mic"));
-        let d2 = c
-            .add("Voice Chat", None, None)
-            .expect("adds duplicate label");
-        assert_eq!(d2.name, "sink_voice_chat_2");
-        // Reserved collision: label "mic" must not produce sink_mic.
-        let d3 = c.add("Mic", None, None).expect("adds");
-        assert_eq!(d3.name, "sink_mic_2");
-    }
-
-    #[test]
-    fn pathological_labels_hit_the_slug_fallback() {
-        let mut c = Channels::default();
-        // All-special-char labels slugify to empty → "channel" fallback.
-        let d = c.add("!!!", None, None).expect("adds");
-        assert_eq!(d.name, "sink_channel");
-        let d2 = c
-            .add("___", None, None)
-            .expect("adds second pathological label");
-        assert_eq!(d2.name, "sink_channel_2");
-        // Whitespace-only labels are rejected outright.
-        assert!(c.add("   ", None, None).is_err());
-    }
-
-    #[test]
-    fn bus_namespace_labels_stay_out_of_the_bus_prefix() {
-        let mut c = Channels::default();
-        let d = c.add("Bus Foo", None, None).expect("adds");
-        assert_eq!(d.name, "sink_ch_bus_foo");
-        assert!(!crate::persistence::buses::is_bus_name(&d.name));
-        assert!(crate::audio::types::is_virtual_sink(&d.name));
-
-        // A hand-edited channels.json can't smuggle one in either.
+    fn a_bus_named_channel_is_dropped_on_load() {
+        // A hand-edited channels.json can't smuggle a mix-namespace name in.
         let raw = r#"{"channels":[
             {"name":"sink_bus_evil","label":"Evil"},
             {"name":"sink_game","label":"Game"}
@@ -337,50 +141,6 @@ mod tests {
         let parsed = Channels::parse(raw).expect("parses");
         assert_eq!(parsed.channels.len(), 1);
         assert_eq!(parsed.channels[0].name, "sink_game");
-    }
-
-    #[test]
-    fn reorder_is_a_strict_permutation() {
-        let mut c = Channels::default();
-        c.reorder(&[
-            "sink_music".into(),
-            "sink_game".into(),
-            "sink_system".into(),
-            "sink_chat".into(),
-        ])
-        .expect("reorders");
-        let names: Vec<&str> = c.channels.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(
-            names,
-            ["sink_music", "sink_game", "sink_system", "sink_chat"]
-        );
-        // Wrong length and unknown names are rejected.
-        assert!(c.reorder(&["sink_game".into()]).is_err());
-        assert!(c
-            .reorder(&[
-                "sink_music".into(),
-                "sink_game".into(),
-                "sink_system".into(),
-                "sink_nope".into(),
-            ])
-            .is_err());
-    }
-
-    #[test]
-    fn remove_keeps_at_least_one() {
-        let mut c = Channels::default();
-        c.remove("sink_game").expect("removes");
-        c.remove("sink_chat").expect("removes");
-        c.remove("sink_music").expect("removes");
-        assert!(c.remove("sink_system").is_err(), "last channel must stay");
-    }
-
-    #[test]
-    fn rename_updates_label_only() {
-        let mut c = Channels::default();
-        c.rename("sink_game", "Gaems").expect("renames");
-        assert_eq!(c.get("sink_game").expect("exists").label, "Gaems");
-        assert!(c.rename("sink_nope", "X").is_err());
     }
 
     #[test]
@@ -394,35 +154,6 @@ mod tests {
         let c = Channels::parse(raw).expect("valid json");
         assert_eq!(c.channels.len(), 2);
         assert_eq!(c.channels[0].icon, None);
-    }
-
-    #[test]
-    fn volume_and_mute_persist_and_default_to_unity() {
-        let mut c = Channels::default();
-        assert_eq!(c.channels[0].volume_percent, 100);
-        assert!(!c.channels[0].muted);
-
-        c.set_volume("sink_game", 42);
-        c.set_muted("sink_game", true);
-        assert_eq!(c.get("sink_game").expect("channel").volume_percent, 42);
-        assert!(c.get("sink_game").expect("channel").muted);
-        // Other channels are untouched.
-        assert_eq!(c.get("sink_music").expect("channel").volume_percent, 100);
-        // A vanished channel is a no-op, not a panic (fader tick mid-delete).
-        c.set_volume("sink_gone", 10);
-        c.set_muted("sink_gone", true);
-
-        // A round trip through JSON keeps the levels…
-        let raw = serde_json::to_string(&c).expect("serializes");
-        let back = Channels::parse(&raw).expect("reparses");
-        assert_eq!(back.get("sink_game").expect("channel").volume_percent, 42);
-        assert!(back.get("sink_game").expect("channel").muted);
-
-        // …and channels.json written before these fields loads at unity.
-        let legacy = r#"{"channels":[{"name":"sink_game","label":"Game"}]}"#;
-        let old = Channels::parse(legacy).expect("legacy loads");
-        assert_eq!(old.channels[0].volume_percent, 100);
-        assert!(!old.channels[0].muted);
     }
 
     #[test]
