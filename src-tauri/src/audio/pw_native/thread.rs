@@ -175,6 +175,12 @@ struct ClientEntry {
     _listener: pw::client::ClientListener,
 }
 
+#[derive(Default, Clone, Copy)]
+struct NodeLevel {
+    volume_percent: Option<u8>,
+    muted: Option<bool>,
+}
+
 #[derive(Default)]
 struct State {
     nodes: HashMap<u32, NodeEntry>,
@@ -194,6 +200,9 @@ struct State {
     /// Nodes that must stay alive; if one vanishes without us destroying it
     /// (another instance, a PipeWire restart, wpctl), it is recreated in place.
     desired: HashMap<String, (String, NodeKind)>,
+    /// Last level and mute set on each `desired` node, put back when the node
+    /// is recreated (a fresh node starts at 100% and unmuted).
+    node_levels: HashMap<String, NodeLevel>,
     /// Create requests waiting for the sink's global to appear.
     pending_creates: HashMap<String, Vec<Reply<()>>>,
     /// Live meter capture streams per node name: our channels and mixes,
@@ -692,6 +701,7 @@ fn on_node(
         if !s.owned_sinks.contains_key(&node_name) {
             s.adopted_sinks.insert(node_name.clone(), global.id);
         }
+        restore_level(&s, &node_name, global.id);
         if !s.meters.contains_key(&node_name) {
             add_meter(&mut s, core, &node_name, global.id, levels, true);
         }
@@ -721,6 +731,7 @@ fn on_node(
                 let _ = reply.send(Ok(()));
             }
         }
+        restore_level(&s, &node_name, global.id);
         let from_monitor = media_class == SINK_CLASS;
         if !s.meters.contains_key(&node_name) {
             add_meter(&mut s, core, &node_name, global.id, levels, from_monitor);
@@ -1304,6 +1315,7 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
         Cmd::DestroySink { name, reply } => {
             let mut s = state.borrow_mut();
             s.desired.remove(&name);
+            s.node_levels.remove(&name);
             s.meters.remove(&name);
             // Drop the EQ insert before the sink proxy goes away so the
             // capture stream's target doesn't vanish under it mid-teardown.
@@ -1410,7 +1422,13 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             percent,
             reply,
         } => {
-            let s = state.borrow();
+            let mut s = state.borrow_mut();
+            if s.desired.contains_key(&name) {
+                s.node_levels
+                    .entry(name.clone())
+                    .or_default()
+                    .volume_percent = Some(percent);
+            }
             let _ = reply.send(set_props(s.node_by_name(&name), Some(percent), None));
         }
         Cmd::SetMetersActive { active, reply } => {
@@ -1424,7 +1442,10 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             let _ = reply.send(Ok(()));
         }
         Cmd::SetNodeMuteByName { name, muted, reply } => {
-            let s = state.borrow();
+            let mut s = state.borrow_mut();
+            if s.desired.contains_key(&name) {
+                s.node_levels.entry(name.clone()).or_default().muted = Some(muted);
+            }
             let _ = reply.send(set_props(s.node_by_name(&name), None, Some(muted)));
         }
         Cmd::SetNodeVolumeById { id, percent, reply } => {
@@ -1459,6 +1480,7 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
         Cmd::DestroyBus { name, reply } => {
             let mut s = state.borrow_mut();
             s.desired.remove(&name);
+            s.node_levels.remove(&name);
             s.meters.remove(&name);
             s.bus_members.remove(&name);
             s.bus_links.retain(|(bus, _), _| bus != &name);
@@ -1717,6 +1739,20 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                 }
             }
         }
+    }
+}
+
+/// A recreated node starts at 100% and unmuted: give it back the level and
+/// mute last set on it. A node seen for the first time has nothing saved.
+fn restore_level(s: &State, name: &str, id: u32) {
+    let Some(level) = s.node_levels.get(name).copied() else {
+        return;
+    };
+    if level.volume_percent.is_none() && level.muted.is_none() {
+        return;
+    }
+    if let Err(e) = set_props(s.nodes.get(&id), level.volume_percent, level.muted) {
+        eprintln!("wavesink: restoring level of {name} failed: {e}");
     }
 }
 
