@@ -1,9 +1,9 @@
 %global debug_package %{nil}
 
 Name:           wavesink
-Version:        0.9.5
+Version:        1.0.0
 Release:        1%{?dist}
-Summary:        SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire
+Summary:        Per-app audio routing and independent mixes for PipeWire
 
 License:        GPL-3.0-only
 URL:            https://github.com/calmasacow/WaveSink
@@ -30,9 +30,9 @@ Requires:       libayatana-appindicator3.so.1()(64bit)
 
 %description
 WaveSink is a Linux-native audio routing and mixing app built on PipeWire, in the
-spirit of SteelSeries Sonar or Voicemeeter. Create named virtual channels
-(Game, Chat, Music, System), assign application audio streams to them, control
-volume and mute per channel, and route a processed virtual microphone.
+spirit of creator mixers. Group application audio into named channels (Game,
+Chat, Music, System), add hardware inputs, and route each one independently into
+mixes for listening, streaming and recording.
 
 This package repackages the official prebuilt release, linked against the
 system PipeWire and webkit2gtk - no bundled libraries and no build toolchain.
