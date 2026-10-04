@@ -386,6 +386,18 @@ impl DesktopDb for Desktops {
             .find(|d| ids.iter().any(|i| i == &d.id) && d.exec_base.as_deref() == Some(exe))
             .map(|d| (d.id.clone(), d.name.clone()))
     }
+
+    fn entry_by_exec(&self, exe: &str) -> Option<(String, String)> {
+        let resolver = resolver().lock().ok()?;
+        let mut hits = resolver
+            .desktops
+            .iter()
+            .filter(|d| d.exec_base.as_deref() == Some(exe));
+        let first = hits.next()?;
+        // A user override and the system file share one id: still one app.
+        hits.all(|d| d.id == first.id)
+            .then(|| (first.id.clone(), first.name.clone()))
+    }
 }
 
 /// An Exec match is only trusted when it is the only desktop entry running that

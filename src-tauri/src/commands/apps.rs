@@ -93,7 +93,7 @@ pub fn get_seen_apps(state: State<'_, AppState>) -> Result<Vec<SeenApp>, String>
         .map(|(e, _, _)| identity_key(&e.match_prop, &e.match_value))
         .collect();
     cache.retain(|key, _| live.contains(key));
-    Ok(rows
+    let mut apps: Vec<SeenApp> = rows
         .into_iter()
         .map(|(entry, assigned_sink, alias)| {
             let key = identity_key(&entry.match_prop, &entry.match_value);
@@ -117,7 +117,29 @@ pub fn get_seen_apps(state: State<'_, AppState>) -> Result<Vec<SeenApp>, String>
                 alias,
             }
         })
-        .collect())
+        .collect();
+    label_flatpak_twins(&mut apps);
+    Ok(apps)
+}
+
+/// An app installed both natively and as a Flatpak shows two rows with one
+/// name; mark the Flatpak one so they can be told apart. A lone Flatpak, or
+/// a row the user renamed, is left as it is.
+fn label_flatpak_twins(apps: &mut [SeenApp]) {
+    let shown = |a: &SeenApp| a.alias.clone().unwrap_or_else(|| a.display_name.clone());
+    let names: Vec<String> = apps.iter().map(|a| shown(a).to_lowercase()).collect();
+    for (i, app) in apps.iter_mut().enumerate() {
+        if app.match_prop != crate::audio::identity::PROP_FLATPAK || app.alias.is_some() {
+            continue;
+        }
+        let twin = names
+            .iter()
+            .enumerate()
+            .any(|(j, name)| j != i && *name == names[i]);
+        if twin {
+            app.display_name = format!("{} (Flatpak)", app.display_name);
+        }
+    }
 }
 
 /// The icon stored while the app was live, as long as the file is still
@@ -235,5 +257,35 @@ mod tests {
             Some("/fresh.png".into())
         );
         assert_eq!(history_icon(&row(None), None), None);
+    }
+
+    fn app(prop: &str, value: &str, name: &str) -> SeenApp {
+        SeenApp {
+            match_prop: prop.into(),
+            match_value: value.into(),
+            display_name: name.into(),
+            icon_name: None,
+            icon_path: None,
+            last_seen: 0,
+            ignored: false,
+            assigned_sink: None,
+            alias: None,
+        }
+    }
+
+    #[test]
+    fn only_a_flatpak_sharing_a_name_is_labelled() {
+        let mut apps = vec![
+            app("desktop.id", "com.obsproject.studio", "OBS Studio"),
+            app("flatpak.app_id", "com.obsproject.Studio", "OBS Studio"),
+            app("flatpak.app_id", "com.spotify.Client", "Spotify"),
+        ];
+        label_flatpak_twins(&mut apps);
+        assert_eq!(apps[0].display_name, "OBS Studio");
+        assert_eq!(apps[1].display_name, "OBS Studio (Flatpak)");
+        assert_eq!(
+            apps[2].display_name, "Spotify",
+            "a lone Flatpak stays as is"
+        );
     }
 }

@@ -98,6 +98,126 @@ impl MixerState {
             .map(str::to_string)
     }
 
+    /// Fold history rows, assignments and aliases keyed on a plain
+    /// executable into the desktop app it now resolves to (see
+    /// `identity::desktop_for_exe`). Earlier versions keyed one app on its
+    /// exe or its desktop id depending on how it was launched, so it showed
+    /// up several times. A desktop-keyed assignment or alias wins over the
+    /// exe one; history keeps the latest sighting. Returns which stores
+    /// changed: (seen, assignments, aliases).
+    pub fn merge_exe_identities(
+        &mut self,
+        desktops: &dyn crate::audio::identity::DesktopDb,
+    ) -> (bool, bool, bool) {
+        use crate::audio::identity::{desktop_for_exe, PROP_DESKTOP, PROP_EXE};
+        use crate::persistence::assignments::identity_key;
+        let target = |prop: &str, value: &str| {
+            (prop == PROP_EXE)
+                .then(|| desktop_for_exe(desktops, value))
+                .flatten()
+        };
+
+        let mut seen_changed = false;
+        let mut i = 0;
+        while i < self.seen.apps.len() {
+            let entry = &self.seen.apps[i];
+            let Some((id, name)) = target(&entry.match_prop, &entry.match_value) else {
+                i += 1;
+                continue;
+            };
+            seen_changed = true;
+            let source = self.seen.apps.remove(i);
+            match self
+                .seen
+                .apps
+                .iter_mut()
+                .find(|e| e.match_prop == PROP_DESKTOP && e.match_value == id)
+            {
+                Some(existing) => {
+                    if source.last_seen > existing.last_seen {
+                        existing.last_seen = source.last_seen;
+                    }
+                    existing.ignored |= source.ignored;
+                    if existing.icon_path.is_none() {
+                        existing.icon_path = source.icon_path;
+                    }
+                }
+                None => self.seen.apps.insert(
+                    i,
+                    crate::persistence::seen::SeenEntry {
+                        match_prop: PROP_DESKTOP.to_string(),
+                        match_value: id,
+                        display_name: name,
+                        ..source
+                    },
+                ),
+            }
+        }
+
+        // Rename exe-keyed rules, then keep one rule per identity: a rule that
+        // was already desktop-keyed wins over a renamed one (stable sort).
+        let mut renamed_keys: Vec<(String, String)> = Vec::new();
+        let mut rules: Vec<(bool, crate::persistence::assignments::Assignment)> =
+            std::mem::take(&mut self.assignments.assignments)
+                .into_iter()
+                .map(|mut a| {
+                    let moved = target(&a.match_prop, &a.match_value).map(|(id, _)| {
+                        renamed_keys.push((
+                            identity_key(&a.match_prop, &a.match_value),
+                            identity_key(PROP_DESKTOP, &id),
+                        ));
+                        a.match_prop = PROP_DESKTOP.to_string();
+                        a.match_value = id;
+                    });
+                    (moved.is_some(), a)
+                })
+                .collect();
+        let assignments_changed = !renamed_keys.is_empty();
+        rules.sort_by_key(|(moved, _)| *moved);
+        let mut out: Vec<crate::persistence::assignments::Assignment> = Vec::new();
+        for (_, mut a) in rules {
+            if out
+                .iter()
+                .any(|o| o.match_prop == a.match_prop && o.match_value == a.match_value)
+            {
+                continue;
+            }
+            for key in &mut a.adopted_by {
+                if let Some((_, to)) = renamed_keys.iter().find(|(from, _)| from == key) {
+                    *key = to.clone();
+                }
+            }
+            out.push(a);
+        }
+        self.assignments.assignments = out;
+
+        let mut aliases: Vec<(bool, crate::persistence::aliases::AliasEntry)> =
+            std::mem::take(&mut self.aliases.aliases)
+                .into_iter()
+                .map(|mut alias| {
+                    let moved = target(&alias.match_prop, &alias.match_value).map(|(id, _)| {
+                        alias.match_prop = PROP_DESKTOP.to_string();
+                        alias.match_value = id;
+                    });
+                    (moved.is_some(), alias)
+                })
+                .collect();
+        let aliases_changed = aliases.iter().any(|(moved, _)| *moved);
+        aliases.sort_by_key(|(moved, _)| *moved);
+        let mut out: Vec<crate::persistence::aliases::AliasEntry> = Vec::new();
+        for (_, alias) in aliases {
+            if !out
+                .iter()
+                .any(|o| o.match_prop == alias.match_prop && o.match_value == alias.match_value)
+            {
+                out.push(alias);
+            }
+        }
+        self.aliases.aliases = out;
+
+        (seen_changed, assignments_changed, aliases_changed)
+    }
+
     pub fn reset(&mut self) {
         self.initialized = false;
     }
@@ -288,5 +408,82 @@ mod tests {
         assert_eq!(state.auto_routed.len(), 2);
         state.plan_auto_routes(&[stream(1, 10, "A", None)]);
         assert_eq!(state.auto_routed, HashSet::from([10]));
+    }
+
+    struct OneDesktop;
+    impl crate::audio::identity::DesktopDb for OneDesktop {
+        fn name_by_id(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn entry_for_exec(&self, _: &[String], _: &str) -> Option<(String, String)> {
+            None
+        }
+        fn entry_by_exec(&self, exe: &str) -> Option<(String, String)> {
+            (exe == "obs").then(|| ("com.obsproject.studio".into(), "OBS Studio".into()))
+        }
+    }
+
+    // Bug shape: OBS from a launcher was keyed on its desktop id, from a
+    // terminal on its exe, so the Apps screen listed it twice.
+    #[test]
+    fn exe_keyed_identities_fold_into_their_desktop_app() {
+        use crate::persistence::seen::SeenEntry;
+        let seen = |prop: &str, value: &str, last_seen| SeenEntry {
+            match_prop: prop.into(),
+            match_value: value.into(),
+            display_name: "OBS Studio".into(),
+            icon_name: None,
+            icon_path: None,
+            last_seen,
+            ignored: false,
+        };
+        let mut state = MixerState::default();
+        state.seen.apps = vec![
+            seen("desktop.id", "com.obsproject.studio", 10),
+            seen("process.exe", "obs", 20),
+            seen("process.exe", "obs-browser-page", 5),
+        ];
+        state
+            .assignments
+            .set("desktop.id", "com.obsproject.studio", "sink_obs_monitor");
+        state.assignments.set("process.exe", "obs", "sink_game");
+        state
+            .assignments
+            .set("process.exe", "obs-browser-page", "sink_browser");
+        state.aliases.set("process.exe", "obs", "OBS");
+
+        let (s, a, al) = state.merge_exe_identities(&OneDesktop);
+        assert!(s && a && al);
+        let obs: Vec<_> = state
+            .seen
+            .apps
+            .iter()
+            .filter(|e| e.match_value == "com.obsproject.studio")
+            .collect();
+        assert_eq!(obs.len(), 1, "one row for OBS");
+        assert_eq!(obs[0].last_seen, 20, "latest sighting kept");
+        assert_eq!(
+            state
+                .assignments
+                .sink_for("desktop.id", "com.obsproject.studio"),
+            Some("sink_obs_monitor"),
+            "the desktop-keyed rule wins"
+        );
+        assert!(state.assignments.sink_for("process.exe", "obs").is_none());
+        // An exe no desktop entry runs is left alone.
+        assert_eq!(
+            state
+                .assignments
+                .sink_for("process.exe", "obs-browser-page"),
+            Some("sink_browser")
+        );
+        assert_eq!(
+            state.aliases.get("desktop.id", "com.obsproject.studio"),
+            Some("OBS")
+        );
+        assert_eq!(
+            state.merge_exe_identities(&OneDesktop),
+            (false, false, false)
+        );
     }
 }

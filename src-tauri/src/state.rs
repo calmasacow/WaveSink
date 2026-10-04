@@ -63,6 +63,19 @@ impl AppState {
             seen_saved_at: now,
             ..MixerState::default()
         };
+        // One app used to collect several identities depending on how it was
+        // launched; fold them together before anything reads them.
+        let (seen, assignments, aliases) =
+            mixer.merge_exe_identities(&crate::audio::icons::Desktops);
+        if seen {
+            let _ = mixer.seen.save();
+        }
+        if assignments {
+            let _ = mixer.assignments.save();
+        }
+        if aliases {
+            let _ = mixer.aliases.save();
+        }
         if mixer.prune_stale_apps(now) {
             if let Err(e) = mixer.seen.save() {
                 eprintln!("wavesink: pruning app history failed: {e}");
