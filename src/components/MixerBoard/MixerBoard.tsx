@@ -5,7 +5,6 @@ import { Ms, ICON_CHOICES } from "../Icons";
 import { CHANNEL_COLORS } from "../ChannelIcon";
 import { Modal } from "../Modal";
 import { ChannelStrip } from "./ChannelStrip";
-import { MicStrip } from "./MicStrip";
 import { BusStrip } from "./StreamMixStrip";
 
 // UI-side gates only; the backend enforces the real limits.
@@ -58,7 +57,6 @@ export function MixerBoard() {
   const seenApps = useMixerStore((s) => s.seenApps);
   const addChannel = useMixerStore((s) => s.addChannel);
   const addBus = useMixerStore((s) => s.addBus);
-  const micConfig = useMixerStore((s) => s.micConfig);
   const backendNative = useMixerStore((s) => s.backendNative);
 
   const moveChannel = useMixerStore((s) => s.moveChannel);
@@ -120,20 +118,6 @@ export function MixerBoard() {
     <div className="content">
       <div className="screen-scroll" style={{ padding: 0 }}>
         <div className="mix-scroll">
-          {micConfig?.enabled && (
-            <>
-              <MixGroup
-                icon="mic"
-                label="Capture"
-                count="1"
-                hint="Your processed mic - apps capture it as WaveSink Mic"
-              >
-                <MicStrip />
-              </MixGroup>
-              <div className="group-div" />
-            </>
-          )}
-
           <MixGroup
             icon="apps"
             label="Channels"

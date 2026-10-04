@@ -53,9 +53,8 @@ pub fn add_bus(state: State<'_, AppState>, label: String) -> Result<(), String> 
         let _ = mixer.buses.remove(&def.name);
         return Err(e.to_string());
     }
-    if let Err(e) = state
-        .backend
-        .set_bus_members(&def.name, &def.effective_members(&all))
+    if let Err(e) =
+        crate::commands::buses::push_bus_members(&state, &def.name, &def.effective_members(&all))
     {
         eprintln!("wavesink: members for new mix {} failed: {e}", def.name);
     }
@@ -141,19 +140,8 @@ pub fn rename_bus_on(state: &AppState, name: String, label: String) -> Result<()
         .backend
         .create_bus(&def.name, &prefs.decorate(&def.label), def.role)
         .map_err(|e| e.to_string())?;
-    state
-        .backend
-        .set_bus_members(&def.name, &def.effective_members(&all))
+    crate::commands::buses::push_bus_members(&state, &def.name, &def.effective_members(&all))
         .map_err(|e| e.to_string())?;
-    // The recreate cleared mic membership in the loop's state.
-    if def.mic {
-        if let Err(e) = state.backend.set_bus_mic(&def.name, true) {
-            eprintln!(
-                "wavesink: mic membership for renamed mix {} failed: {e}",
-                def.name
-            );
-        }
-    }
     // The node is fresh; restore its saved level and send gains.
     apply_bus_level(state.backend.as_ref(), &def);
     apply_bus_member_gains(state.backend.as_ref(), &def);
@@ -203,15 +191,8 @@ pub fn set_bus_role_on(
         .backend
         .create_bus(&def.name, &prefs.decorate(&def.label), def.role)
         .map_err(|e| e.to_string())?;
-    state
-        .backend
-        .set_bus_members(&def.name, &def.effective_members(&all))
+    crate::commands::buses::push_bus_members(&state, &def.name, &def.effective_members(&all))
         .map_err(|e| e.to_string())?;
-    if def.mic {
-        if let Err(e) = state.backend.set_bus_mic(&def.name, true) {
-            eprintln!("wavesink: mic membership for mix {} failed: {e}", def.name);
-        }
-    }
     apply_bus_level(state.backend.as_ref(), &def);
     apply_bus_member_gains(state.backend.as_ref(), &def);
 
@@ -249,6 +230,47 @@ pub fn remove_bus_on(state: &AppState, name: String) -> Result<(), String> {
     defs.save().map_err(|e| e.to_string())
 }
 
+/// Hardware inputs routed into `mix`. They live only in the routing matrix:
+/// a mix's saved members are software channels.
+pub(crate) fn hardware_members(
+    routing: &crate::routing_model::RoutingModel,
+    mix: &str,
+) -> Vec<String> {
+    routing
+        .inputs
+        .iter()
+        .filter(|input| input.kind == crate::routing_model::InputKind::Hardware)
+        .filter(|input| {
+            routing
+                .routes
+                .get(&input.id)
+                .and_then(|cells| cells.get(mix))
+                .is_some_and(|cell| cell.enabled)
+        })
+        .map(|input| input.id.clone())
+        .collect()
+}
+
+/// Push a mix's members to the backend, adding the hardware inputs routed
+/// into it. Every membership push goes through here: passing only the saved
+/// software channels would silently unlink hardware inputs (a mic routed to
+/// a mix stayed silent after restart until its cell was toggled).
+pub(crate) fn push_bus_members(
+    state: &AppState,
+    mix: &str,
+    channels: &[String],
+) -> Result<(), crate::error::SinkError> {
+    let mut members = channels.to_vec();
+    if let Ok(mixer) = state.lock_mixer() {
+        for id in hardware_members(&mixer.routing, mix) {
+            if !members.contains(&id) {
+                members.push(id);
+            }
+        }
+    }
+    state.backend.set_bus_members(mix, &members)
+}
+
 /// Replace the channel set a mix carries. For auto-include mixes the stored
 /// value is the complement (unchecked set), so future channels keep flowing in.
 #[tauri::command]
@@ -273,9 +295,7 @@ pub fn set_bus_members(
             channels.clone()
         }
     };
-    state
-        .backend
-        .set_bus_members(&name, &channels)
+    crate::commands::buses::push_bus_members(&state, &name, &channels)
         .map_err(|e| e.to_string())?;
     let defs = {
         let mut mixer = state.lock_mixer()?;
@@ -289,30 +309,7 @@ pub fn set_bus_members(
     defs.save().map_err(|e| e.to_string())
 }
 
-/// Include (or drop) the processed virtual mic as a member of a mix, so
-/// one input device carries voice plus app audio.
-#[tauri::command]
-pub fn set_bus_mic(state: State<'_, AppState>, name: String, mic: bool) -> Result<(), String> {
-    {
-        let mixer = state.lock_mixer()?;
-        if mixer.buses.get(&name).is_none() {
-            return Err("unknown mix".to_string());
-        }
-    }
-    state
-        .backend
-        .set_bus_mic(&name, mic)
-        .map_err(|e| e.to_string())?;
-    let defs = {
-        let mut mixer = state.lock_mixer()?;
-        mixer.buses.set_mic(&name, mic).map_err(|e| e.to_string())?;
-        crate::commands::profiles::autosave_active(&mixer);
-        mixer.buses.clone()
-    };
-    defs.save().map_err(|e| e.to_string())
-}
-
-/// `member` is a channel sink name or `sink_mic`; 100 means no override,
+/// `member` is a channel sink name or hardware input id; 100 means no override,
 /// and only this mix's listeners hear the difference.
 #[tauri::command]
 pub fn set_bus_member_gain(
@@ -328,8 +325,12 @@ pub fn set_bus_member_gain(
         if mixer.buses.get(&bus).is_none() {
             return Err(format!("unknown mix: {bus}"));
         }
-        let known_member =
-            member == "sink_mic" || mixer.channel_defs.channels.iter().any(|c| c.name == member);
+        let known_member = mixer.channel_defs.channels.iter().any(|c| c.name == member)
+            || mixer
+                .routing
+                .inputs
+                .iter()
+                .any(|i| i.id == member && i.kind == crate::routing_model::InputKind::Hardware);
         if !known_member {
             return Err(format!("unknown mix member: {member}"));
         }
@@ -414,7 +415,7 @@ pub fn set_bus_exclude(
     defs.save().map_err(|e| e.to_string())
 }
 
-/// Set a mix's playback level (0-150%) - what recorders hear. Unlike
+/// Set a mix's playback level (0-100%) - what recorders hear. Unlike
 /// `set_channel_volume`, this accepts mix nodes, including the master mix.
 #[tauri::command]
 pub fn set_bus_volume(state: State<'_, AppState>, name: String, volume: u8) -> Result<(), String> {
@@ -471,6 +472,50 @@ pub(crate) fn channel_names(mixer: &crate::mixer::state::MixerState) -> Vec<Stri
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn hardware_members_lists_enabled_hardware_routes_only() {
+        use crate::routing_model::{FxChain, InputDef, InputKind, RouteCell, RoutingModel};
+        let input = |id: &str, kind: InputKind| InputDef {
+            id: id.into(),
+            label: id.into(),
+            icon: None,
+            icon_color: None,
+            kind,
+            source_name: id.into(),
+            volume_percent: 100,
+            muted: false,
+            fx: FxChain::default(),
+            order: 0,
+        };
+        let cell = |enabled| RouteCell {
+            enabled,
+            send_percent: 100,
+            muted: false,
+        };
+        let mut model = RoutingModel::default();
+        model.inputs = vec![
+            input("hardware:mic", InputKind::Hardware),
+            input("hardware:cam", InputKind::Hardware),
+            input("sink_game", InputKind::Software),
+        ];
+        for (id, enabled) in [
+            ("hardware:mic", true),
+            ("hardware:cam", false),
+            ("sink_game", true),
+        ] {
+            model
+                .routes
+                .entry(id.into())
+                .or_default()
+                .insert("sink_bus_stream".into(), cell(enabled));
+        }
+        assert_eq!(
+            hardware_members(&model, "sink_bus_stream"),
+            vec!["hardware:mic"]
+        );
+        assert!(hardware_members(&model, "sink_bus_chat").is_empty());
+    }
     use super::*;
     use crate::audio::mock::{Call, MockBackend};
     use crate::persistence::buses::MixRole;

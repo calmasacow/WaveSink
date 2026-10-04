@@ -211,17 +211,16 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                 continue;
             }
         }
-        if let Err(e) = state
-            .backend
-            .set_bus_members(&bus.name, &bus.effective_members(&names))
-        {
-            eprintln!("wavesink: profile members for mix {} failed: {e}", bus.name);
+        // Hardware routes come from the incoming profile: the live routing
+        // model is only swapped in after this loop.
+        let mut members = bus.effective_members(&names);
+        for id in crate::commands::buses::hardware_members(&profile.routing, &bus.name) {
+            if !members.contains(&id) {
+                members.push(id);
+            }
         }
-        if let Err(e) = state.backend.set_bus_mic(&bus.name, bus.mic) {
-            eprintln!(
-                "wavesink: profile mic membership for mix {} failed: {e}",
-                bus.name
-            );
+        if let Err(e) = state.backend.set_bus_members(&bus.name, &members) {
+            eprintln!("wavesink: profile members for mix {} failed: {e}", bus.name);
         }
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
         crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);

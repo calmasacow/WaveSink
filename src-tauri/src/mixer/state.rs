@@ -25,8 +25,6 @@ pub struct MixerState {
     pub outputs: crate::persistence::outputs::ChannelOutputs,
     /// Per-channel parametric EQ configs (persisted to disk).
     pub eq: crate::persistence::eq::ChannelEq,
-    /// Mic chain configuration (persisted to disk).
-    pub mic: crate::audio::types::MicConfig,
     /// Every app identity ever observed (history + ignore list).
     pub seen: crate::persistence::seen::SeenApps,
     /// Unix seconds of the last `seen` write; bounds how stale `last_seen`

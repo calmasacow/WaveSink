@@ -1933,6 +1933,29 @@ body,
   color: var(--fg-secondary);
   cursor: pointer;
 }
+.wave-mix-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.wave-source-slider.wave-mix-level {
+  flex: 1 0 100%;
+  gap: 7px;
+  width: 100%;
+}
+.wave-source-slider.wave-mix-level .meter-wrap {
+  flex: 1;
+  width: auto;
+}
+.wave-source-slider.wave-mix-level input {
+  width: 100%;
+}
+.wave-mix-level span {
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: var(--fg-muted);
+  font-size: 10px;
+  text-align: right;
+}
 .wave-mix-mute:hover {
   background: var(--bg-surface-hover);
   color: var(--fg-primary);
@@ -2018,21 +2041,6 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-.wave-meter {
-  width: 100%;
-  height: 3px;
-  margin-top: 4px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: var(--border);
-}
-.wave-meter i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--online), var(--warning), var(--danger));
-  transition: width 0.08s linear;
 }
 .wave-mute,
 .wave-eq {
@@ -2156,11 +2164,19 @@ body,
 .wave-send input::-webkit-slider-runnable-track {
   height: 8px;
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    var(--accent) 0 var(--slider-value, 50%),
-    var(--border) var(--slider-value, 50%) 100%
-  );
+  /* Only the live level fills the track; the knob alone marks the setting.
+     Top to bottom: peak-hold tick; an empty-track cover that uncovers the
+     level colors up to --meter; the level colors. Set per frame by
+     lib/meters. */
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(var(--meter-peak, 0%) - 2px),
+      var(--fg-primary) calc(var(--meter-peak, 0%) - 2px) var(--meter-peak, 0%),
+      transparent var(--meter-peak, 0%)
+    ),
+    linear-gradient(90deg, transparent 0 var(--meter, 0%), var(--border) var(--meter, 0%) 100%),
+    var(--meter-colors);
 }
 .wave-source-slider input::-webkit-slider-thumb,
 .wave-send input::-webkit-slider-thumb {
@@ -2179,12 +2195,6 @@ body,
   border: 0;
   border-radius: 999px;
   background: var(--border);
-}
-.wave-source-slider input::-moz-range-progress,
-.wave-send input::-moz-range-progress {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--accent);
 }
 .wave-source-slider input::-moz-range-thumb,
 .wave-send input::-moz-range-thumb {
@@ -3723,4 +3733,61 @@ body,
 .fx-drawer small {
   color: #8d92ab;
   line-height: 1.45;
+}
+
+/* Live meters repaint ~30×/s: keep each slider on its own layer so a
+   repaint never spills into the rest of the grid. */
+.meter-slider {
+  contain: layout paint;
+  will-change: transform;
+}
+
+/* Meter color zones, from the theme's green/yellow/red. Standard: solid
+   green to 40%, fading to full red at 95%. Pro (-60..0 dBFS): green to
+   -18 dBFS, amber from -12 dBFS, hard red from -3 dBFS. */
+:root {
+  --meter-colors: linear-gradient(
+    90deg,
+    var(--online) 0 40%,
+    var(--warning) 75%,
+    var(--danger) 95% 100%
+  );
+}
+:root[data-meter-scale="pro"] {
+  --meter-colors: linear-gradient(
+    90deg,
+    var(--online) 0 70%,
+    var(--warning) 80% 95%,
+    var(--danger) 95% 100%
+  );
+}
+.meter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.wave-source-slider .meter-wrap {
+  width: 64px;
+}
+/* Pro: live held peak while hovering a meter. */
+.meter-readout {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 20;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--fg-primary);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+:root[data-meter-scale="pro"] .meter-wrap:hover .meter-readout {
+  display: block;
 }

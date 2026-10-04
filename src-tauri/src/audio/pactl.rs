@@ -276,7 +276,14 @@ impl AudioBackend for PactlBackend {
     }
 
     fn set_sink_volume(&self, sink_name: &str, volume_percent: u8) -> Result<(), SinkError> {
-        Self::run(&["set-sink-volume", sink_name, &format!("{volume_percent}%")])?;
+        Self::run(&[
+            "set-sink-volume",
+            sink_name,
+            &format!(
+                "{}%",
+                volume_percent.min(crate::commands::routing::MAX_VOLUME)
+            ),
+        ])?;
         Ok(())
     }
 
@@ -300,7 +307,10 @@ impl AudioBackend for PactlBackend {
         Self::run(&[
             "set-sink-input-volume",
             &stream_index.to_string(),
-            &format!("{volume_percent}%"),
+            &format!(
+                "{}%",
+                volume_percent.min(crate::commands::routing::MAX_VOLUME)
+            ),
         ])?;
         Ok(())
     }
@@ -322,12 +332,6 @@ impl AudioBackend for PactlBackend {
                 description: s.description,
             })
             .collect())
-    }
-
-    fn set_mic_config(&self, _config: &crate::audio::types::MicConfig) -> Result<(), SinkError> {
-        Err(SinkError::Config(
-            "the mic DSP chain requires the native PipeWire backend".into(),
-        ))
     }
 
     fn set_channel_eq(
@@ -377,12 +381,6 @@ impl AudioBackend for PactlBackend {
         Ok(())
     }
 
-    fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
-        Err(SinkError::Config(
-            "mic-in-mix requires the native PipeWire backend".into(),
-        ))
-    }
-
     fn set_bus_member_gain(
         &self,
         _bus_name: &str,
@@ -408,29 +406,6 @@ impl AudioBackend for PactlBackend {
         Err(SinkError::Config(
             "monitoring requires the native PipeWire backend".into(),
         ))
-    }
-
-    fn get_default_devices(&self) -> Result<(Option<String>, Option<String>), SinkError> {
-        let sink = Self::run(&["get-default-sink"])
-            .ok()
-            .map(|s| s.trim().to_string());
-        let source = Self::run(&["get-default-source"])
-            .ok()
-            .map(|s| s.trim().to_string());
-        Ok((
-            sink.filter(|s| !s.is_empty()),
-            source.filter(|s| !s.is_empty()),
-        ))
-    }
-
-    fn set_default_output(&self, name: &str) -> Result<(), SinkError> {
-        Self::run(&["set-default-sink", name])?;
-        Ok(())
-    }
-
-    fn set_default_input(&self, name: &str) -> Result<(), SinkError> {
-        Self::run(&["set-default-source", name])?;
-        Ok(())
     }
 
     fn set_channel_output(

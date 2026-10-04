@@ -5,9 +5,9 @@
 mod dsp;
 mod eq;
 mod eq_chain;
+mod input_fx;
 pub mod levels;
 pub mod meter;
-mod mic;
 mod pods;
 mod ring;
 mod send_gain;
@@ -111,6 +111,16 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
+    fn set_input_fx(&self, id: &str, fx: &crate::routing_model::FxChain) -> Result<(), SinkError> {
+        let id = id.to_string();
+        let fx = fx.clone();
+        self.request(|reply| Cmd::SetInputFx { id, fx, reply })
+    }
+
+    fn set_meters_active(&self, active: bool) -> Result<(), SinkError> {
+        self.request(|reply| Cmd::SetMetersActive { active, reply })
+    }
+
     fn set_sink_mute(&self, sink_name: &str, muted: bool) -> Result<(), SinkError> {
         let name = sink_name.to_string();
         self.request(|reply| Cmd::SetNodeMuteByName { name, muted, reply })
@@ -187,11 +197,6 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
-    fn set_bus_mic(&self, name: &str, mic: bool) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetBusMic { name, mic, reply })
-    }
-
     fn set_bus_member_gain(
         &self,
         bus_name: &str,
@@ -256,11 +261,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::ListInputs { reply })
     }
 
-    fn set_mic_config(&self, config: &crate::audio::types::MicConfig) -> Result<(), SinkError> {
-        let config = config.clone();
-        self.request(|reply| Cmd::SetMicConfig { config, reply })
-    }
-
     fn set_channel_eq(
         &self,
         sink_name: &str,
@@ -271,28 +271,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::SetChannelEq {
             sink_name,
             config,
-            reply,
-        })
-    }
-
-    fn get_default_devices(&self) -> Result<(Option<String>, Option<String>), SinkError> {
-        self.request(|reply| Cmd::GetDefaults { reply })
-    }
-
-    fn set_default_output(&self, name: &str) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetDefault {
-            input: false,
-            name,
-            reply,
-        })
-    }
-
-    fn set_default_input(&self, name: &str) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetDefault {
-            input: true,
-            name,
             reply,
         })
     }

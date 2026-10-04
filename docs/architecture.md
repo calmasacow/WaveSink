@@ -31,7 +31,7 @@ Tauri command threads.
 - monitor links
 - link policing and external-node healing
 - level/meter registration
-- mic and EQ insert lifetimes
+- per-input Audio FX and per-channel EQ insert lifetimes
 
 The safest next graph change is to extend these link registries rather than
 introduce a second PipeWire loop or userspace audio-copy path.
@@ -58,7 +58,6 @@ backend operation, and make failure recovery refresh the model from Rust.
 | `channels.json` | Legacy software-input definitions and source fader state |
 | `buses.json` | Legacy mix definitions and native bus compatibility state |
 | `outputs.json` | Legacy channel output choices/failover |
-| `mic.json` | Existing mic DSP configuration |
 | `eq.json` | Existing channel EQ configuration |
 | `profiles/*.json` | Profiles; now includes optional `routing` |
 | `routing.json` | New input×mix matrix contract |

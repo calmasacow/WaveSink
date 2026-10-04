@@ -5,7 +5,7 @@
 use std::sync::Mutex;
 
 use crate::audio::backend::AudioBackend;
-use crate::audio::types::{AppStream, EqConfig, MicConfig, OutputDevice};
+use crate::audio::types::{AppStream, EqConfig, OutputDevice};
 use crate::error::SinkError;
 
 /// One recorded backend call. Only the calls tests assert on are named;
@@ -220,10 +220,6 @@ impl AudioBackend for MockBackend {
         Ok(())
     }
 
-    fn set_bus_mic(&self, _name: &str, _mic: bool) -> Result<(), SinkError> {
-        Ok(())
-    }
-
     fn set_bus_member_gain(
         &self,
         _bus_name: &str,
@@ -247,21 +243,5 @@ impl AudioBackend for MockBackend {
 
     fn list_input_devices(&self) -> Result<Vec<OutputDevice>, SinkError> {
         Ok(Vec::new())
-    }
-
-    fn get_default_devices(&self) -> Result<(Option<String>, Option<String>), SinkError> {
-        Ok((None, None))
-    }
-
-    fn set_default_output(&self, _name: &str) -> Result<(), SinkError> {
-        Ok(())
-    }
-
-    fn set_default_input(&self, _name: &str) -> Result<(), SinkError> {
-        Ok(())
-    }
-
-    fn set_mic_config(&self, _config: &MicConfig) -> Result<(), SinkError> {
-        Ok(())
     }
 }

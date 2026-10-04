@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-/// Maximum concurrent meters (channels + mic, with headroom).
-pub const MAX_METERS: usize = 12;
+/// Maximum concurrent meters: every channel, mix, the mic and each hardware
+/// input. Route-cell meters are derived in the UI and take no slot.
+pub const MAX_METERS: usize = 96;
 
 /// Lock-free per-meter peak store with a name->slot registry. Peaks are written
 /// by realtime callbacks as f32 amplitudes bit-cast into AtomicU32.
@@ -21,7 +22,7 @@ struct SlotRegistry {
 impl LevelStore {
     pub fn new() -> Self {
         Self {
-            peaks: Default::default(),
+            peaks: std::array::from_fn(|_| [AtomicU32::new(0), AtomicU32::new(0)]),
             slots: Mutex::new(SlotRegistry::default()),
         }
     }

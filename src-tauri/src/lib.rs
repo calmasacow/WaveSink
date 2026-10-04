@@ -8,6 +8,7 @@ pub(crate) mod routing_model;
 mod state;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,6 +21,58 @@ use audio::pactl::PactlBackend;
 use audio::pw_native::levels::LevelStore;
 use audio::pw_native::PipeWireBackend;
 use state::AppState;
+
+const SET_MIX_VOLUME_FLAG: &str = "--set-mix-volume";
+
+/// Meter rates for the level emitter, set from prefs at startup and by
+/// `set_meter_prefs`: focused fps, and the unfocused policy.
+static METER_FPS: AtomicU8 = AtomicU8::new(30);
+static METER_UNFOCUSED: AtomicU8 = AtomicU8::new(0);
+
+pub(crate) fn set_meter_rates(fps: u8, unfocused: persistence::prefs::MeterUnfocused) {
+    use persistence::prefs::MeterUnfocused;
+    METER_FPS.store(fps, Ordering::Relaxed);
+    let policy = match unfocused {
+        MeterUnfocused::Reduced => 0,
+        MeterUnfocused::Full => 1,
+        MeterUnfocused::Off => 2,
+    };
+    METER_UNFOCUSED.store(policy, Ordering::Relaxed);
+}
+
+/// The rate meters run at right now; 0 = paused.
+fn meter_fps(onscreen: bool, focused: bool) -> u8 {
+    meter_fps_for(
+        METER_FPS.load(Ordering::Relaxed),
+        METER_UNFOCUSED.load(Ordering::Relaxed),
+        onscreen,
+        focused,
+    )
+}
+
+fn meter_fps_for(fps: u8, unfocused_policy: u8, onscreen: bool, focused: bool) -> u8 {
+    if !onscreen {
+        return 0;
+    }
+    if focused {
+        return fps;
+    }
+    match unfocused_policy {
+        1 => fps,
+        2 => 0,
+        _ => fps.min(persistence::prefs::METER_REDUCED_FPS),
+    }
+}
+
+/// `--set-mix-volume <mix> <percent>` from a forwarded argv, percent clamped
+/// to the mix range.
+fn parse_set_mix_volume(argv: &[String]) -> Option<(String, u8)> {
+    let at = argv.iter().position(|a| a == SET_MIX_VOLUME_FLAG)?;
+    let name = argv.get(at + 1)?;
+    let percent: u16 = argv.get(at + 2)?.parse().ok()?;
+    let volume = percent.min(u16::from(commands::routing::MAX_VOLUME)) as u8;
+    Some((name.clone(), volume))
+}
 
 pub fn run() {
     // Fall back to pactl subprocess calls if the native PipeWire loop can't
@@ -43,7 +96,18 @@ pub fn run() {
     let result = tauri::Builder::default()
         // Must stay first: a second launch would spawn a duplicate fighting
         // over the same virtual sinks.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // The Omarchy audio panel forwards its mix sliders here; apply
+            // and persist without raising the window.
+            if let Some((name, volume)) = parse_set_mix_volume(&argv) {
+                match commands::buses::set_bus_volume(app.state(), name, volume) {
+                    Ok(()) => {
+                        let _ = app.emit("buses-changed", ());
+                    }
+                    Err(e) => eprintln!("wavesink: --set-mix-volume failed: {e}"),
+                }
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -81,7 +145,6 @@ pub fn run() {
             commands::buses::set_bus_icon_color,
             commands::buses::remove_bus,
             commands::buses::set_bus_members,
-            commands::buses::set_bus_mic,
             commands::buses::set_bus_exclude,
             commands::buses::set_bus_role,
             commands::buses::set_bus_volume,
@@ -107,9 +170,7 @@ pub fn run() {
             commands::routing::set_app_volume,
             commands::routing::rename_app,
             commands::routing::set_monitor,
-            commands::mic::get_mic_config,
-            commands::mic::set_mic_config,
-            commands::mic::get_input_devices,
+            commands::devices::get_input_devices,
             commands::eq::get_channel_eq_configs,
             commands::eq::set_channel_eq,
             commands::eq::list_eq_presets,
@@ -129,15 +190,12 @@ pub fn run() {
             commands::settings::get_omarchy_theme,
             commands::settings::get_autostart,
             commands::settings::set_autostart,
-            commands::settings::get_default_devices,
-            commands::settings::set_default_output,
-            commands::settings::set_default_input,
             commands::settings::get_prefs,
-            commands::settings::set_device_label_style,
             commands::settings::set_onboarded,
             commands::settings::set_balance_channels,
             commands::settings::set_balance_visible,
             commands::settings::set_start_minimized,
+            commands::settings::set_meter_prefs,
             commands::settings::reset_app,
             commands::hotkeys::get_hotkeys,
             commands::hotkeys::configure_hotkeys,
@@ -149,10 +207,17 @@ pub fn run() {
                 eprintln!("wavesink: autostart migration failed: {error}");
             }
             build_tray(app)?;
+            {
+                let prefs = app.state::<AppState>().lock_mixer()?.prefs.clone();
+                set_meter_rates(prefs.meter_fps, prefs.meter_unfocused);
+            }
             hotkeys::start(app.handle().clone());
             // The window starts hidden (config) to avoid a flash; show it
             // now unless launched with --minimized (autostart-to-tray).
-            let minimized = std::env::args().any(|a| a == "--minimized");
+            // A first launch from --set-mix-volume shouldn't pop the window
+            // either; the mixes don't exist yet, so there is nothing to set.
+            let minimized =
+                std::env::args().any(|a| a == "--minimized" || a == SET_MIX_VOLUME_FLAG);
             if !minimized {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
@@ -240,19 +305,41 @@ fn spawn_route_enforcer(handle: tauri::AppHandle) {
 fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
     std::thread::spawn(move || {
         let mut prev_all_zero = false;
+        let mut meters_on: Option<bool> = None;
         loop {
-            std::thread::sleep(Duration::from_millis(100));
             // The app's dominant state is sitting in the tray; don't lock the
             // registry, serialize a map, and wake a webview nobody can see.
-            let onscreen = handle
+            let (onscreen, focused) = handle
                 .get_webview_window("main")
-                .map(|w| w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false))
-                .unwrap_or(true);
-            if !onscreen {
-                // Force a fresh frame when the window returns.
+                .map(|w| {
+                    let shown =
+                        w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false);
+                    (shown, w.is_focused().unwrap_or(true))
+                })
+                .unwrap_or((true, true));
+            let fps = meter_fps(onscreen, focused);
+            // Pause the meter streams themselves while hidden (or set off
+            // while unfocused), so metering costs nothing then.
+            let active = fps > 0;
+            if meters_on != Some(active) {
+                let backend = handle.state::<AppState>().backend.clone();
+                match backend.set_meters_active(active) {
+                    Ok(()) => meters_on = Some(active),
+                    Err(e) => eprintln!("wavesink: set_meters_active: {e}"),
+                }
+                // Settle the UI's meters to zero rather than freezing them.
+                if !active && onscreen {
+                    let _ = handle.emit("levels", HashMap::<String, [f32; 2]>::new());
+                }
+            }
+            if !active {
+                // Force a fresh frame when metering resumes.
                 prev_all_zero = false;
+                std::thread::sleep(Duration::from_millis(250));
                 continue;
             }
+            // The UI interpolates and decays between frames.
+            std::thread::sleep(Duration::from_millis(1000 / u64::from(fps)));
             // The meter registry is dynamic (user-defined channels + mic).
             let payload: HashMap<String, [f32; 2]> = levels
                 .names()
@@ -370,4 +457,56 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     tray.set_icon(Some(icon))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{meter_fps_for, parse_set_mix_volume};
+
+    #[test]
+    fn meters_follow_focus_policy() {
+        // Hidden: always paused.
+        assert_eq!(meter_fps_for(30, 1, false, true), 0);
+        // Focused: the chosen rate.
+        assert_eq!(meter_fps_for(20, 0, true, true), 20);
+        // Unfocused: reduced, full, or off.
+        assert_eq!(meter_fps_for(30, 0, true, false), 10);
+        assert_eq!(meter_fps_for(30, 1, true, false), 30);
+        assert_eq!(meter_fps_for(30, 2, true, false), 0);
+    }
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parses_set_mix_volume() {
+        let argv = args(&["wavesink", "--set-mix-volume", "sink_bus_stream", "80"]);
+        assert_eq!(
+            parse_set_mix_volume(&argv),
+            Some(("sink_bus_stream".to_string(), 80))
+        );
+    }
+
+    #[test]
+    fn clamps_set_mix_volume() {
+        let argv = args(&["wavesink", "--set-mix-volume", "sink_bus_chat", "400"]);
+        assert_eq!(
+            parse_set_mix_volume(&argv),
+            Some(("sink_bus_chat".to_string(), 100))
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_set_mix_volume() {
+        assert_eq!(parse_set_mix_volume(&args(&["wavesink"])), None);
+        assert_eq!(
+            parse_set_mix_volume(&args(&["wavesink", "--set-mix-volume", "sink_bus_chat"])),
+            None
+        );
+        assert_eq!(
+            parse_set_mix_volume(&args(&["wavesink", "--set-mix-volume", "x", "-5"])),
+            None
+        );
+    }
 }

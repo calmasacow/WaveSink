@@ -1,4 +1,4 @@
-use crate::audio::types::{AppStream, EqConfig, MicConfig, OutputDevice};
+use crate::audio::types::{AppStream, EqConfig, OutputDevice};
 use crate::error::SinkError;
 use crate::routing_model::OutputBinding;
 
@@ -11,6 +11,19 @@ pub trait AudioBackend: Send + Sync {
     fn list_app_streams(&self) -> Result<Vec<AppStream>, SinkError>;
     fn list_output_devices(&self) -> Result<Vec<OutputDevice>, SinkError>;
     fn set_sink_volume(&self, sink_name: &str, volume_percent: u8) -> Result<(), SinkError>;
+    /// Apply a hardware input's Audio FX (gate, compressor, limiter).
+    /// Backends without a DSP engine ignore it.
+    fn set_input_fx(
+        &self,
+        _id: &str,
+        _fx: &crate::routing_model::FxChain,
+    ) -> Result<(), SinkError> {
+        Ok(())
+    }
+    /// Pause or resume level metering. Backends without meters ignore it.
+    fn set_meters_active(&self, _active: bool) -> Result<(), SinkError> {
+        Ok(())
+    }
     fn set_sink_mute(&self, sink_name: &str, muted: bool) -> Result<(), SinkError>;
     /// Move an app stream to a sink. An empty `sink_name` means "unassign":
     /// the stream is returned to the system default sink.
@@ -58,11 +71,7 @@ pub trait AudioBackend: Send + Sync {
     /// Replace the set of channels feeding a mix bus.
     fn set_bus_members(&self, name: &str, channels: &[String]) -> Result<(), SinkError>;
 
-    /// Include (or drop) the virtual mic as a mix member. Its own method, not a
-    /// `set_bus_members` flag: membership resyncs must never touch it.
-    fn set_bus_mic(&self, name: &str, mic: bool) -> Result<(), SinkError>;
-
-    /// Set one member's send level within one mix (0-150%; 100 = unity).
+    /// Set one member's send level within one mix (0-100%; 100 = unity).
     /// Independent of the member's own volume/EQ - only this mix hears it.
     fn set_bus_member_gain(
         &self,
@@ -92,19 +101,4 @@ pub trait AudioBackend: Send + Sync {
 
     /// Hardware capture devices (microphones) for the mic chain.
     fn list_input_devices(&self) -> Result<Vec<OutputDevice>, SinkError>;
-
-    /// Current system defaults: (output sink name, input source name).
-    fn get_default_devices(&self) -> Result<(Option<String>, Option<String>), SinkError>;
-
-    /// Set the system default output device. Channels following the
-    /// default relink automatically.
-    fn set_default_output(&self, name: &str) -> Result<(), SinkError>;
-
-    /// Set the system default input device (what the mic chain captures
-    /// when no explicit input is chosen).
-    fn set_default_input(&self, name: &str) -> Result<(), SinkError>;
-
-    /// Apply the mic chain configuration. Native-backend only; the pactl
-    /// fallback reports it as unsupported.
-    fn set_mic_config(&self, config: &MicConfig) -> Result<(), SinkError>;
 }

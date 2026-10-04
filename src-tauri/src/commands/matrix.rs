@@ -1,3 +1,4 @@
+use crate::commands::routing::MAX_VOLUME;
 use tauri::State;
 
 use crate::routing_model::{FxChain, InputDef, InputKind, OutputBinding, RouteCell, RoutingModel};
@@ -255,7 +256,7 @@ pub fn set_route_cell(
 ) -> Result<(), String> {
     let cell = RouteCell {
         enabled,
-        send_percent: send_percent.min(150),
+        send_percent: send_percent.min(MAX_VOLUME),
         muted,
     };
     let (def, bus_channels, hardware) = {
@@ -283,27 +284,18 @@ pub fn set_route_cell(
             .as_ref()
             .map(|d| d.effective_members(&all))
             .unwrap_or_default();
-        if enabled && !members.contains(&input_id) && input_id != "sink_mic" {
+        if enabled && !members.contains(&input_id) {
             members.push(input_id.clone());
         }
-        if !enabled && input_id != "sink_mic" {
+        if !enabled {
             members.retain(|m| m != &input_id);
         }
         (def, members, hardware)
     };
 
     if def.is_some() {
-        if input_id == "sink_mic" {
-            state
-                .backend
-                .set_bus_mic(&mix_id, enabled)
-                .map_err(|e| e.to_string())?;
-        } else {
-            state
-                .backend
-                .set_bus_members(&mix_id, &bus_channels)
-                .map_err(|e| e.to_string())?;
-        }
+        crate::commands::buses::push_bus_members(&state, &mix_id, &bus_channels)
+            .map_err(|e| e.to_string())?;
         let effective_gain = if muted || !enabled {
             0
         } else {
@@ -314,7 +306,7 @@ pub fn set_route_cell(
             .set_bus_member_gain(&mix_id, &input_id, effective_gain)
             .map_err(|e| e.to_string())?;
         let mut mixer = state.lock_mixer()?;
-        if input_id != "sink_mic" && !hardware {
+        if !hardware {
             mixer
                 .buses
                 .set_members(&mix_id, bus_channels)
@@ -347,7 +339,7 @@ pub fn set_input_level(
             .iter_mut()
             .find(|input| input.id == input_id)
             .ok_or_else(|| format!("unknown input {input_id}"))?;
-        input.volume_percent = volume_percent.min(150);
+        input.volume_percent = volume_percent.min(MAX_VOLUME);
         input.muted = muted;
         let source_name = input.source_name.clone();
         let kind = input.kind.clone();
@@ -434,14 +426,6 @@ pub fn remove_hardware_input(state: State<'_, AppState>, input_id: String) -> Re
     mixer.routing.inputs.retain(|item| item.id != input_id);
     mixer.routing.routes.remove(&input_id);
     mixer.buses.remove_channel(&input_id);
-    if input_id == "sink_mic" {
-        mixer.mic.enabled = false;
-        crate::persistence::mic::save(&mixer.mic).map_err(|e| e.to_string())?;
-        state
-            .backend
-            .set_mic_config(&mixer.mic)
-            .map_err(|e| e.to_string())?;
-    }
     mixer.routing.save().map_err(|e| e.to_string())?;
     mixer.buses.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
@@ -539,7 +523,10 @@ pub fn set_input_fx(
     input_id: String,
     fx: FxChain,
 ) -> Result<(), String> {
-    let mic_config = {
+    // Clamped before it is stored, so the file never holds what the DSP
+    // would refuse.
+    let fx = fx.clamped();
+    let hardware = {
         let mut mixer = state.lock_mixer()?;
         let input = mixer
             .routing
@@ -548,21 +535,15 @@ pub fn set_input_fx(
             .find(|input| input.id == input_id)
             .ok_or_else(|| format!("unknown input {input_id}"))?;
         input.fx = fx.clone();
-        let mic_config = if input_id == "sink_mic" {
-            mixer.mic.gate_enabled = fx.gate_enabled;
-            mixer.mic.comp_enabled = fx.compressor_enabled;
-            mixer.mic.limiter_enabled = fx.limiter_enabled;
-            Some(mixer.mic.clone())
-        } else {
-            None
-        };
+        let hardware = input.kind == InputKind::Hardware;
         mixer.routing.save().map_err(|e| e.to_string())?;
-        mic_config
+        hardware
     };
-    if let Some(config) = mic_config {
+    // Audio FX runs on hardware inputs; software channels have their EQ.
+    if hardware {
         state
             .backend
-            .set_mic_config(&config)
+            .set_input_fx(&input_id, &fx)
             .map_err(|e| e.to_string())?;
     }
     Ok(())

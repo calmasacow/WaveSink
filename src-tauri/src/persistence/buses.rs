@@ -35,18 +35,15 @@ pub struct BusDef {
     /// music"). False = the mix carries exactly `channels` (manual selection).
     #[serde(default)]
     pub exclude: bool,
-    /// Playback level recorders hear (0-150%). Persisted so a mix keeps its
+    /// Playback level recorders hear (0-100%). Persisted so a mix keeps its
     /// level across UI remounts, profile switches, and restarts.
     #[serde(default = "default_volume")]
     pub volume_percent: u8,
     /// Muted for recorders (they hear silence). Persisted like the volume.
     #[serde(default)]
     pub muted: bool,
-    /// The processed virtual mic feeds this mix alongside its channels.
-    #[serde(default)]
-    pub mic: bool,
-    /// Per-member send level (0-150%; absent = 100%), independent of the
-    /// member's own volume. Keyed by sink name, or "sink_mic".
+    /// Per-member send level (0-100%; absent = 100%), independent of the
+    /// member's own volume. Keyed by sink name or hardware input id.
     #[serde(default)]
     pub member_gains: HashMap<String, u8>,
     /// Legacy setting. Mixes are always recording/capture devices.
@@ -102,7 +99,6 @@ impl Default for Buses {
                 exclude: true,
                 volume_percent: 100,
                 muted: false,
-                mic: false,
                 member_gains: HashMap::new(),
                 role: MixRole::Recording,
             }],
@@ -162,15 +158,15 @@ impl Buses {
 
     /// A hand-edited buses.json degrades to the documented ranges instead
     /// of riding through to the UI (the `EqConfig::clamp_ranges` rule).
-    fn clamp_loaded(&mut self) {
+    pub(crate) fn clamp_loaded(&mut self) {
         for bus in &mut self.buses {
             bus.role = MixRole::Recording;
             if bus.icon_color.is_none() {
                 bus.icon_color = Some("purple".into());
             }
-            bus.volume_percent = bus.volume_percent.min(150);
+            bus.volume_percent = bus.volume_percent.min(crate::commands::routing::MAX_VOLUME);
             bus.member_gains.retain(|_, percent| {
-                *percent = (*percent).min(150);
+                *percent = (*percent).min(crate::commands::routing::MAX_VOLUME);
                 *percent != 100
             });
         }
@@ -256,7 +252,6 @@ impl Buses {
             exclude: true,
             volume_percent: 100,
             muted: false,
-            mic: false,
             member_gains: HashMap::new(),
             role: MixRole::Recording,
         };
@@ -324,14 +319,6 @@ impl Buses {
     pub fn set_muted(&mut self, name: &str, muted: bool) -> Result<(), SinkError> {
         let def = self.get_mut(name)?;
         def.muted = muted;
-        Ok(())
-    }
-
-    /// Allowed on the master mix too - unlike channel membership, mic
-    /// inclusion isn't auto-managed.
-    pub fn set_mic(&mut self, name: &str, mic: bool) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        def.mic = mic;
         Ok(())
     }
 

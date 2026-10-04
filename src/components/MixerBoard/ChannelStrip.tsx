@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLevel } from "../../lib/meters";
 import { useMixerStore } from "../../store/mixer";
 import type { VirtualSink } from "../../types";
 import { MAX_VOLUME } from "../../types";
@@ -34,7 +35,7 @@ export function ChannelStrip({
 }: Readonly<ChannelStripProps>) {
   const setChannelVolume = useMixerStore((s) => s.setChannelVolume);
   const toggleMute = useMixerStore((s) => s.toggleMute);
-  const level = useMixerStore((s) => s.levels[channel.name]);
+  const level = useLevel(channel.name);
   const output = useMixerStore((s) => s.channelOutputs[channel.name] ?? null);
   const resolvedOutput = useMixerStore((s) => s.resolvedOutputs[channel.name] ?? null);
   const failover = useMixerStore((s) => s.channelFailover[channel.name] ?? true);

@@ -67,7 +67,6 @@ impl AppState {
         let channel_defs = crate::persistence::channels::Channels::load();
         let buses = crate::persistence::buses::Buses::load(&channel_defs);
         let outputs = crate::persistence::outputs::ChannelOutputs::load();
-        let mic = crate::persistence::mic::load();
         let routing =
             crate::routing_model::RoutingModel::load_or_migrate(&channel_defs, &buses, &outputs);
         let active_profile = crate::persistence::active::load();
@@ -83,7 +82,6 @@ impl AppState {
             aliases: crate::persistence::aliases::Aliases::load(),
             outputs,
             eq: crate::persistence::eq::ChannelEq::load(),
-            mic,
             channel_defs,
             buses,
             routing,

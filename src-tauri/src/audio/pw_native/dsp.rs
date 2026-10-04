@@ -44,7 +44,6 @@ const GATE_HOLD_MS: f32 = 200.0;
 
 const COMP_ATTACK_MS: f32 = 6.0;
 const COMP_RELEASE_MS: f32 = 60.0;
-const COMP_MAKEUP_DB: f32 = 4.0;
 
 const LIMIT_RELEASE_MS: f32 = 60.0;
 
@@ -100,7 +99,6 @@ impl DspChain {
         let comp_thresh_db = s.comp_threshold_db;
         let comp_att = coeff(COMP_ATTACK_MS, sr);
         let comp_rel = coeff(COMP_RELEASE_MS, sr);
-        let makeup = db_to_linear(COMP_MAKEUP_DB);
 
         let ceiling = db_to_linear(s.limiter_ceiling_db);
         let limit_rel = coeff(LIMIT_RELEASE_MS, sr);
@@ -151,7 +149,7 @@ impl DspChain {
                     let reduction_db = over * (1.0 - 1.0 / s.comp_ratio.max(1.0));
                     x *= db_to_linear(-reduction_db);
                 }
-                x *= makeup;
+                // No makeup gain: the chain only ever attenuates.
             }
 
             // ---- limiter (hard knee, instant attack, smooth release) ----
@@ -241,10 +239,10 @@ mod tests {
         let mut loud: Vec<f32> = (0..48000).map(|i| 0.5 * (i as f32 * 0.06).sin()).collect();
         chain.process(&mut loud, &settings(false, true, false, 1.0));
         let out_peak = peak(&loud[24000..]);
-        // -6 dB over threshold is 12 dB; reduced by 12*(1-1/3)=8 dB, +4 makeup
-        // → net -4 dB from input peak 0.5 → ~0.315. Allow generous tolerance.
-        assert!(out_peak < 0.45, "expected compression, peak={out_peak}");
-        assert!(out_peak > 0.2, "compression overshot, peak={out_peak}");
+        // -6 dB over threshold is 12 dB; reduced by 12*(1-1/3)=8 dB, no makeup
+        // → net -8 dB from input peak 0.5 → ~0.2. Allow generous tolerance.
+        assert!(out_peak < 0.3, "expected compression, peak={out_peak}");
+        assert!(out_peak > 0.12, "compression overshot, peak={out_peak}");
     }
 
     #[test]

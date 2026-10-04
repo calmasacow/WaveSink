@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMixerStore, type Levels } from "../store/mixer";
+import { pushLevels, setMeterConfig, type MeterUnfocused } from "../lib/meters";
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -13,7 +15,6 @@ export function useAudio() {
   const fetchAppStreams = useMixerStore((s) => s.fetchAppStreams);
   const fetchOutputs = useMixerStore((s) => s.fetchOutputs);
   const fetchSeenApps = useMixerStore((s) => s.fetchSeenApps);
-  const setLevels = useMixerStore((s) => s.setLevels);
   const outputDevices = useMixerStore((s) => s.outputDevices);
   const profiles = useMixerStore((s) => s.profiles);
   const loadProfile = useMixerStore((s) => s.loadProfile);
@@ -49,12 +50,24 @@ export function useAudio() {
     };
   }, [initialize, fetchAppStreams, fetchOutputs, fetchSeenApps]);
 
+  // Meter scale and rates from prefs.
   useEffect(() => {
-    const unlisten = listen<Levels>("levels", (event) => setLevels(event.payload));
+    void invoke<{ meter_pro: boolean; meter_fps: number; meter_unfocused: MeterUnfocused }>(
+      "get_prefs",
+    )
+      .then((p) =>
+        setMeterConfig({ pro: p.meter_pro, fps: p.meter_fps, unfocused: p.meter_unfocused }),
+      )
+      .catch(() => {});
+  }, []);
+
+  // Meters paint straight from the event; nothing re-renders per frame.
+  useEffect(() => {
+    const unlisten = listen<Levels>("levels", (event) => pushLevels(event.payload));
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [setLevels]);
+  }, []);
 
   // Profile switched from the tray menu - sync the whole UI.
   const onProfileChanged = useMixerStore((s) => s.onProfileChanged);
@@ -75,6 +88,15 @@ export function useAudio() {
       void unlisten.then((fn) => fn());
     };
   }, [fetchChannels]);
+
+  // The Omarchy audio panel set a mix level through the CLI.
+  const fetchBuses = useMixerStore((s) => s.fetchBuses);
+  useEffect(() => {
+    const unlisten = listen("buses-changed", () => void fetchBuses());
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [fetchBuses]);
 
   // Hardware profile auto-switch: when a device with a bound profile
   // appears, load that profile (Sonar-style).

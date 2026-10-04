@@ -58,7 +58,7 @@ pub fn add_channel(
     for bus in &buses.buses {
         let members = bus.effective_members(&names);
         if members.contains(&names[names.len() - 1]) {
-            if let Err(e) = state.backend.set_bus_members(&bus.name, &members) {
+            if let Err(e) = crate::commands::buses::push_bus_members(&state, &bus.name, &members) {
                 eprintln!("wavesink: membership for mix {} failed: {e}", bus.name);
             }
         }
@@ -218,9 +218,11 @@ pub fn remove_channel(state: State<'_, AppState>, sink_name: String) -> Result<(
     };
 
     for bus in &buses.buses {
-        let _ = state
-            .backend
-            .set_bus_members(&bus.name, &bus.effective_members(&names));
+        let _ = crate::commands::buses::push_bus_members(
+            &state,
+            &bus.name,
+            &bus.effective_members(&names),
+        );
     }
 
     defs.save().map_err(|e| e.to_string())?;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLevel } from "../../lib/meters";
 import { useMixerStore } from "../../store/mixer";
 import type { BusDef } from "../../types";
 import { busMembers, MAX_VOLUME } from "../../types";
@@ -23,11 +24,9 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
   const channels = useMixerStore((s) => s.channels);
   const setBusMembers = useMixerStore((s) => s.setBusMembers);
   const setBusExclude = useMixerStore((s) => s.setBusExclude);
-  const setBusMic = useMixerStore((s) => s.setBusMic);
-  const micEnabled = useMixerStore((s) => s.micConfig?.enabled ?? false);
   const renameBus = useMixerStore((s) => s.renameBus);
   const removeBus = useMixerStore((s) => s.removeBus);
-  const level = useMixerStore((s) => s.levels[bus.name]);
+  const level = useLevel(bus.name);
   const monitoring = useMixerStore((s) => s.monitors[bus.name] ?? false);
   const toggleMonitor = useMixerStore((s) => s.toggleMonitor);
   const setBusVolume = useMixerStore((s) => s.setBusVolume);
@@ -87,11 +86,10 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
           <button
             type="button"
             className="strip-meta strip-meta-btn"
-            title={`Channels and levels${bus.mic ? " (carries the mic)" : ""}`}
+            title="Channels and levels"
             onClick={() => setManaging(true)}
           >
             {memberLabel(carried.length, allNames.length)}
-            {bus.mic && <Ms name="mic" style={{ fontSize: 12 }} />}
             <Ms name="expand_more" style={{ fontSize: 13 }} />
           </button>
           <Popover
@@ -101,13 +99,6 @@ export function BusStrip({ bus }: Readonly<{ bus: BusDef }>) {
             align="center"
             style={{ minWidth: 260 }}
           >
-            <MenuCheckItem
-              checked={bus.mic}
-              title={micEnabled ? undefined : "Enable the mic first (Mic tab)"}
-              onClick={() => void setBusMic(bus.name, !bus.mic)}
-            >
-              <span className="menu-item-label">Microphone</span>
-            </MenuCheckItem>
             {channels.map((c) => (
               <MenuCheckItem
                 key={c.name}

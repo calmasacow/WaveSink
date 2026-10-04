@@ -3,7 +3,8 @@ use tauri::State;
 use crate::audio::types::is_virtual_sink;
 use crate::state::AppState;
 
-pub(crate) const MAX_VOLUME: u8 = 150;
+/// Every level tops out at unity: 100% means unchanged audio, no boost.
+pub(crate) const MAX_VOLUME: u8 = 100;
 
 /// An app's other live streams: same identity, different stream. Routing is
 /// per app, so these move with the one the user clicked.
@@ -87,7 +88,7 @@ pub fn route_app(state: &AppState, stream_index: u32, sink_name: &str) -> Result
     Ok(())
 }
 
-/// Set a channel's volume (0-150%).
+/// Set a channel's volume (0-100%).
 #[tauri::command]
 pub fn set_channel_volume(
     state: State<'_, AppState>,
@@ -154,16 +155,15 @@ pub fn set_monitor(
     sink_name: String,
     enabled: bool,
 ) -> Result<(), String> {
-    // Monitoring is scoped to our own nodes: a channel, a mix bus, or the mic -
-    // not any arbitrary session sink.
+    // Monitoring is scoped to our own nodes: a channel or a mix bus - not any
+    // arbitrary session sink.
     {
         let mixer = state.lock_mixer()?;
-        let known = sink_name == "sink_mic"
-            || mixer
-                .channel_defs
-                .channels
-                .iter()
-                .any(|c| c.name == sink_name)
+        let known = mixer
+            .channel_defs
+            .channels
+            .iter()
+            .any(|c| c.name == sink_name)
             || mixer.buses.buses.iter().any(|b| b.name == sink_name);
         if !known {
             return Err(format!("unknown monitor target: {sink_name}"));
@@ -192,7 +192,7 @@ pub fn rename_app(
     aliases.save().map_err(|e| e.to_string())
 }
 
-/// Set the volume of a single app stream (0-150%).
+/// Set the volume of a single app stream (0-100%).
 #[tauri::command]
 pub fn set_app_volume(
     state: State<'_, AppState>,

@@ -102,7 +102,6 @@ describe("setBusRole", () => {
     exclude: false,
     volume_percent: 100,
     muted: false,
-    mic: false,
     role,
     member_gains: {},
   });
@@ -138,13 +137,6 @@ describe("setBusRole", () => {
     expect(s.buses[0].role).toBe("recording");
     expect(s.error).toContain("rebuild failed");
     expect(invoke).toHaveBeenCalledWith("list_buses");
-  });
-});
-
-describe("setLevels", () => {
-  it("stores per-sink peaks", () => {
-    useMixerStore.getState().setLevels({ sink_game: [0.5, 0.4] });
-    expect(useMixerStore.getState().levels["sink_game"]).toEqual([0.5, 0.4]);
   });
 });
 

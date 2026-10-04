@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMixerStore } from "../../store/mixer";
-import { busMembers, MIC_LEVEL_KEY } from "../../types";
+import { busMembers } from "../../types";
 import { channelIcon, Ms, WaveSinkMark } from "../Icons";
 import { SendRow } from "./SendRow";
 
@@ -81,14 +81,6 @@ export function MixPopout({ busName }: Readonly<{ busName: string }>) {
       <div className="popout-body">
         {bus ? (
           <>
-            {bus.mic && (
-              <SendRow
-                icon="mic"
-                label="Microphone"
-                value={bus.member_gains[MIC_LEVEL_KEY] ?? 100}
-                onChange={(v) => void setBusMemberGain(bus.name, MIC_LEVEL_KEY, v)}
-              />
-            )}
             {channels
               .filter((c) => carried.includes(c.name))
               .map((c) => (
@@ -100,7 +92,7 @@ export function MixPopout({ busName }: Readonly<{ busName: string }>) {
                   onChange={(v) => void setBusMemberGain(bus.name, c.name, v)}
                 />
               ))}
-            {!bus.mic && carried.length === 0 && (
+            {carried.length === 0 && (
               <p className="send-levels-hint">This mix has no members yet.</p>
             )}
           </>

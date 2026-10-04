@@ -35,8 +35,9 @@ Then verify:
    require Desktop Audio.
 5. Mute Music on Stream and confirm it remains audible in Personal.
 6. Add a new app/input and confirm Chat does not receive it automatically.
-7. Toggle mic gate/compressor/limiter and confirm the processed mic changes in
-   every mix that carries it.
+7. Turn on a hardware input's Audio FX (gate/compressor/limiter) and confirm
+   the processed signal reaches every mix that input is routed to, and that
+   turning every stage off returns it to a direct link.
 8. Destroy a custom mix and inspect the PipeWire graph for orphaned null sinks,
    loopbacks, or monitor links.
 9. Switch profiles and verify source levels, cell sends/mutes, mix selection,

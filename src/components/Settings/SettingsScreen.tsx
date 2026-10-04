@@ -3,18 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useMixerStore } from "../../store/mixer";
 import { useTheme, themeOptions, type ThemeId } from "../../store/theme";
-import type { OutputDevice } from "../../types";
 import { Ms } from "../Icons";
 import { HotkeysSection } from "./HotkeysSection";
 import { ConfirmModal } from "../ConfirmModal";
 import { MenuItem } from "../MenuItem";
 import { Popover } from "../Popover";
 import { Toggle } from "../Toggle";
+import {
+  setMeterConfig,
+  useMeterConfig,
+  type MeterConfig,
+  type MeterUnfocused,
+} from "../../lib/meters";
 
-interface DefaultDevices {
-  output: string | null;
-  input: string | null;
-}
+const METER_FPS_CHOICES = [10, 20, 30];
 
 function ThemeSwatch({ colors }: Readonly<{ colors: readonly string[] }>) {
   return (
@@ -77,26 +79,30 @@ function ThemePicker() {
   );
 }
 
-/** Card row with a device dropdown for picking a system default. */
-function DeviceRow({
+const UNFOCUSED_CHOICES: { value: MeterUnfocused; label: string }[] = [
+  { value: "reduced", label: "10 fps" },
+  { value: "full", label: "Full rate" },
+  { value: "off", label: "Off" },
+];
+
+/** A row with a small dropdown of fixed choices. */
+function ChoiceRow<T extends string | number>({
   icon,
   title,
   sub,
-  devices,
+  choices,
   current,
   onPick,
 }: Readonly<{
   icon: string;
   title: string;
-  /** What this default is used for. */
   sub: string;
-  devices: OutputDevice[];
-  current: string | null;
-  onPick: (name: string) => void;
+  choices: { value: T; label: string }[];
+  current: T;
+  onPick: (value: T) => void;
 }>) {
   const [open, setOpen] = useState(false);
-  const currentDesc = devices.find((d) => d.name === current)?.description ?? current ?? "-";
-
+  const currentLabel = choices.find((c) => c.value === current)?.label ?? String(current);
   return (
     <div className="row">
       <div className="ricon">
@@ -107,28 +113,83 @@ function DeviceRow({
         <div className="rsub">{sub}</div>
       </div>
       <div style={{ position: "relative" }}>
-        <button type="button" className="select device-select" onClick={() => setOpen((o) => !o)}>
-          <span className="device-select-name">{currentDesc}</span>
+        <button type="button" className="select" onClick={() => setOpen((o) => !o)}>
+          <span>{currentLabel}</span>
           <Ms name="expand_more" />
         </button>
         <Popover open={open} onClose={() => setOpen(false)} side="bottom" align="end">
-          {devices.map((d) => (
+          {choices.map((c) => (
             <MenuItem
-              key={d.name}
+              key={String(c.value)}
               icon={icon}
-              selected={d.name === current}
+              selected={c.value === current}
               showCheck
               onClick={() => {
-                onPick(d.name);
+                onPick(c.value);
                 setOpen(false);
               }}
             >
-              {d.description}
+              {c.label}
             </MenuItem>
           ))}
         </Popover>
       </div>
     </div>
+  );
+}
+
+/** Meter scale and refresh rates; saved to prefs, applied live. */
+function MetersSection({ onError }: Readonly<{ onError: (error: string | null) => void }>) {
+  const config = useMeterConfig();
+  const save = async (next: MeterConfig) => {
+    const previous = config;
+    setMeterConfig(next);
+    try {
+      await invoke("set_meter_prefs", {
+        pro: next.pro,
+        fps: next.fps,
+        unfocused: next.unfocused,
+      });
+      onError(null);
+    } catch (e) {
+      setMeterConfig(previous);
+      onError(String(e));
+    }
+  };
+  return (
+    <>
+      <div className="section-label">Meters</div>
+      <div className="card" style={{ padding: "var(--sp-2)" }}>
+        <div className="row">
+          <div className="ricon">
+            <Ms name="graphic_eq" />
+          </div>
+          <div className="rmain">
+            <div className="rtitle">Pro Audio Metering</div>
+            <div className="rsub">
+              Meters in dBFS with standard color zones, levels in dB, peak readout on hover
+            </div>
+          </div>
+          <Toggle on={config.pro} onClick={() => void save({ ...config, pro: !config.pro })} />
+        </div>
+        <ChoiceRow
+          icon="speed"
+          title="Meter frame rate"
+          sub="Smoother meters cost a little more CPU while the window is open"
+          choices={METER_FPS_CHOICES.map((fps) => ({ value: fps, label: `${fps} fps` }))}
+          current={config.fps}
+          onPick={(fps) => void save({ ...config, fps })}
+        />
+        <ChoiceRow
+          icon="filter_center_focus"
+          title="When WaveSink isn't focused"
+          sub="E.g. open on a second monitor while you game"
+          choices={UNFOCUSED_CHOICES}
+          current={config.unfocused}
+          onPick={(unfocused) => void save({ ...config, unfocused })}
+        />
+      </div>
+    </>
   );
 }
 
@@ -144,19 +205,13 @@ export function SettingsScreen() {
   const [startMinimized, setStartMinimized] = useState(false);
   const [backendNative, setBackendNative] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
-  const [defaults, setDefaults] = useState<DefaultDevices>({ output: null, input: null });
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const outputDevices = useMixerStore((s) => s.outputDevices);
-  const inputDevices = useMixerStore((s) => s.inputDevices);
   const replayOnboarding = useMixerStore((s) => s.replayOnboarding);
 
   useEffect(() => {
     void invoke<boolean>("get_autostart").then(setAutostart);
     void invoke<{ native: boolean }>("get_backend_info").then((i) => setBackendNative(i.native));
-    void invoke<DefaultDevices>("get_default_devices")
-      .then(setDefaults)
-      .catch(() => {});
     void invoke<{ start_minimized: boolean }>("get_prefs")
       .then((p) => {
         setStartMinimized(p.start_minimized);
@@ -164,16 +219,6 @@ export function SettingsScreen() {
       .catch(() => {});
     void getVersion().then(setVersion);
   }, []);
-
-  const pickDefault = async (kind: "output" | "input", name: string) => {
-    try {
-      await invoke(kind === "output" ? "set_default_output" : "set_default_input", { name });
-      setDefaults((d) => ({ ...d, [kind]: name }));
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
 
   const toggleAutostart = async () => {
     if (autostart === null) return;
@@ -228,33 +273,6 @@ export function SettingsScreen() {
         <div className="card" style={{ padding: "var(--sp-2)" }}>
           <div className="row">
             <div className="ricon">
-              <Ms name="label" />
-            </div>
-            <div className="rmain">
-              <div className="rtitle">Device naming</div>
-              <div className="rsub">
-                System audio pickers show every virtual device as Name (WaveSink)
-              </div>
-            </div>
-          </div>
-          <DeviceRow
-            icon="speaker"
-            title="Default output"
-            sub="Where channels set to “System default” play"
-            devices={outputDevices}
-            current={defaults.output}
-            onPick={(name) => void pickDefault("output", name)}
-          />
-          <DeviceRow
-            icon="mic"
-            title="Default input"
-            sub="The microphone the WaveSink mic chain captures"
-            devices={inputDevices}
-            current={defaults.input}
-            onPick={(name) => void pickDefault("input", name)}
-          />
-          <div className="row">
-            <div className="ricon">
               <Ms name="rocket_launch" />
             </div>
             <div className="rmain">
@@ -276,6 +294,8 @@ export function SettingsScreen() {
             </div>
           )}
         </div>
+
+        <MetersSection onError={setError} />
 
         <HotkeysSection onError={setError} />
 

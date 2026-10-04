@@ -122,8 +122,15 @@ pub fn load(name: &str) -> Result<Profile, SinkError> {
             e.into()
         }
     })?;
-    serde_json::from_str(&raw)
-        .map_err(|e| SinkError::Config(format!("malformed profile {name}: {e}")))
+    let mut profile: Profile = serde_json::from_str(&raw)
+        .map_err(|e| SinkError::Config(format!("malformed profile {name}: {e}")))?;
+    let max = crate::commands::routing::MAX_VOLUME;
+    for channel in &mut profile.channels {
+        channel.volume_percent = channel.volume_percent.min(max);
+    }
+    profile.buses.clamp_loaded();
+    profile.routing.clamp_levels();
+    Ok(profile)
 }
 
 pub fn delete(name: &str) -> Result<(), SinkError> {

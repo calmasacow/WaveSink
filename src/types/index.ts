@@ -43,33 +43,6 @@ export interface OutputDevice {
   description: string;
 }
 
-/** Mirrors Rust MicConfig. */
-export interface MicConfig {
-  enabled: boolean;
-  /** node.name of the hardware mic (null = system default). */
-  input_device: string | null;
-  /** What other apps list the processed mic as. */
-  output_label: string;
-  /** 0-200; 100 = unity. */
-  gain_percent: number;
-  gate_enabled: boolean;
-  comp_enabled: boolean;
-  limiter_enabled: boolean;
-  muted: boolean;
-  gate_threshold_db: number;
-  comp_threshold_db: number;
-  comp_ratio: number;
-  limiter_ceiling_db: number;
-}
-
-/** Default DSP values (markers on the tuning sliders). */
-export const MIC_DSP_DEFAULTS = {
-  gate_threshold_db: -40,
-  comp_threshold_db: -18,
-  comp_ratio: 3,
-  limiter_ceiling_db: -1,
-} as const;
-
 /** Parametric EQ band shapes (mirrors Rust EqBandKind). */
 export type EqBandKind = "peaking" | "low_shelf" | "high_shelf" | "low_pass" | "high_pass";
 
@@ -141,16 +114,14 @@ export interface BusDef {
   channels: string[];
   /** True = carries everything except `channels`; new channels join automatically. */
   exclude: boolean;
-  /** Playback level recorders hear (0-150%). Persisted with the mix. */
+  /** Playback level recorders hear (0-100%). Persisted with the mix. */
   volume_percent: number;
   /** Muted for recorders (they hear silence). Persisted with the mix. */
   muted: boolean;
-  /** Whether the processed virtual mic feeds this mix too. Persisted. */
-  mic: boolean;
   /** Which device list the mix shows up in. Persisted. */
   role: MixRole;
-  /** Per-member send level within this mix (0-150%); a member absent here
-   *  carries at 100%. Keyed by channel sink name, or "sink_mic". */
+  /** Per-member send level within this mix (0-100%); a member absent here
+   *  carries at 100%. Keyed by channel sink name or hardware input id. */
   member_gains: Record<string, number>;
 }
 
@@ -227,10 +198,8 @@ export interface ProfileInfo {
 /** Sent as sink_name to unassign a stream (backend moves it to the default sink). */
 export const UNASSIGNED = "";
 
-export const MAX_VOLUME = 150;
-export const MAX_MIC_GAIN = 200;
-/** Levels key for the mic chain. */
-export const MIC_LEVEL_KEY = "sink_mic";
+/** Unity: no level in WaveSink ever amplifies. */
+export const MAX_VOLUME = 100;
 /** Node name of the always-on master mix (carries every channel). */
 export interface HotkeyShortcut {
   id: string;

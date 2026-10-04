@@ -64,6 +64,48 @@ impl Default for FxChain {
     }
 }
 
+impl FxChain {
+    /// Whether any processing stage is on. With none on, the input links
+    /// straight into its mixes and no DSP runs at all.
+    pub fn is_active(&self) -> bool {
+        self.gate_enabled || self.compressor_enabled || self.limiter_enabled
+    }
+
+    /// The same values clamped to DSP-safe ranges, non-finite replaced by
+    /// defaults, so a malformed or hostile payload can't destabilize the DSP.
+    pub fn clamped(&self) -> Self {
+        let finite = |v: f32, fallback: f32, lo: f32, hi: f32| {
+            if v.is_finite() {
+                v.clamp(lo, hi)
+            } else {
+                fallback
+            }
+        };
+        Self {
+            gate_threshold_db: finite(
+                self.gate_threshold_db,
+                default_gate_threshold(),
+                -100.0,
+                0.0,
+            ),
+            compressor_threshold_db: finite(
+                self.compressor_threshold_db,
+                default_compressor_threshold(),
+                -100.0,
+                0.0,
+            ),
+            compressor_ratio: finite(self.compressor_ratio, default_compressor_ratio(), 1.0, 20.0),
+            limiter_ceiling_db: finite(
+                self.limiter_ceiling_db,
+                default_limiter_ceiling(),
+                -60.0,
+                0.0,
+            ),
+            ..self.clone()
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InputDef {
     pub id: String,
@@ -203,7 +245,8 @@ impl RoutingModel {
         let path = Self::config_path().ok();
         if let Some(path) = &path {
             if let Ok(raw) = fs::read_to_string(path) {
-                if let Ok(model) = serde_json::from_str::<Self>(&raw) {
+                if let Ok(mut model) = serde_json::from_str::<Self>(&raw) {
+                    model.clamp_levels();
                     return model;
                 }
             }
@@ -233,6 +276,23 @@ impl RoutingModel {
             let _ = model.save();
         }
         model
+    }
+
+    /// Levels saved under the old 150% ceiling come back at unity: the
+    /// pipeline never amplifies.
+    pub fn clamp_levels(&mut self) {
+        let max = crate::commands::routing::MAX_VOLUME;
+        for input in &mut self.inputs {
+            input.volume_percent = input.volume_percent.min(max);
+        }
+        for mix in &mut self.mixes {
+            mix.volume_percent = mix.volume_percent.min(max);
+        }
+        for cells in self.routes.values_mut() {
+            for cell in cells.values_mut() {
+                cell.send_percent = cell.send_percent.min(max);
+            }
+        }
     }
 
     pub fn from_legacy(channels: &Channels, buses: &Buses, outputs: &ChannelOutputs) -> Self {
@@ -279,8 +339,7 @@ impl RoutingModel {
             for mix in buses.buses.iter() {
                 let enabled = mix
                     .effective_members(&inputs.iter().map(|i| i.id.clone()).collect::<Vec<_>>())
-                    .contains(&input.id)
-                    || (input.id == "sink_mic" && mix.mic);
+                    .contains(&input.id);
                 let send = mix.member_gains.get(&input.id).copied().unwrap_or(100);
                 cells.insert(
                     mix.name.clone(),
@@ -333,7 +392,7 @@ impl RoutingModel {
         self.routes.entry(input.into()).or_default().insert(
             mix.into(),
             RouteCell {
-                send_percent: cell.send_percent.min(150),
+                send_percent: cell.send_percent.min(crate::commands::routing::MAX_VOLUME),
                 ..cell
             },
         );
@@ -357,6 +416,48 @@ fn outputs_for_legacy(outputs: &ChannelOutputs) -> Vec<OutputBinding> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn fx_is_active_only_with_a_stage_on() {
+        assert!(!FxChain::default().is_active());
+        for fx in [
+            FxChain {
+                gate_enabled: true,
+                ..FxChain::default()
+            },
+            FxChain {
+                compressor_enabled: true,
+                ..FxChain::default()
+            },
+            FxChain {
+                limiter_enabled: true,
+                ..FxChain::default()
+            },
+        ] {
+            assert!(fx.is_active());
+        }
+    }
+
+    #[test]
+    fn fx_clamps_hostile_values_and_keeps_sane_ones() {
+        let hostile = FxChain {
+            gate_threshold_db: f32::NAN,
+            compressor_threshold_db: 40.0,
+            compressor_ratio: -3.0,
+            limiter_ceiling_db: f32::NEG_INFINITY,
+            ..FxChain::default()
+        }
+        .clamped();
+        assert_eq!(hostile.gate_threshold_db, -40.0);
+        assert_eq!(hostile.compressor_threshold_db, 0.0);
+        assert_eq!(hostile.compressor_ratio, 1.0);
+        assert_eq!(hostile.limiter_ceiling_db, -1.0);
+        let sane = FxChain {
+            gate_enabled: true,
+            ..FxChain::default()
+        };
+        assert_eq!(sane.clamped(), sane);
+    }
     use super::*;
 
     #[test]

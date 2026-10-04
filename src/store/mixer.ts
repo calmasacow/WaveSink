@@ -4,7 +4,6 @@ import type {
   AppStream,
   BusDef,
   EqConfig,
-  MicConfig,
   MixRole,
   OutputDevice,
   ProfileInfo,
@@ -62,9 +61,6 @@ interface MixerStore {
   ) => Promise<boolean>;
   channels: VirtualSink[];
   appStreams: AppStream[];
-  /** Live VU levels; stays empty under the pactl fallback backend. */
-  levels: Levels;
-  setLevels: (levels: Levels) => void;
   /** Physical output devices. */
   outputDevices: OutputDevice[];
   /** Channel -> chosen output node name (null = follow system default). */
@@ -88,11 +84,9 @@ interface MixerStore {
   eqConfigs: Record<string, EqConfig>;
   fetchEq: () => Promise<void>;
   setChannelEq: (sinkName: string, config: EqConfig) => Promise<void>;
-  /** Null until loaded. */
-  micConfig: MicConfig | null;
+  /** Hardware capture devices, for adding a hardware input. */
   inputDevices: OutputDevice[];
-  fetchMic: () => Promise<void>;
-  setMicConfig: (patch: Partial<MicConfig>) => Promise<void>;
+  fetchInputDevices: () => Promise<void>;
   profiles: ProfileInfo[];
   /** Bind or clear the output device that auto-loads a profile. */
   setProfileTrigger: (name: string, device: string | null) => Promise<void>;
@@ -134,15 +128,13 @@ interface MixerStore {
   setBusMembers: (name: string, channels: string[]) => Promise<void>;
   /** Manual vs auto-include mode (carried set preserved). */
   setBusExclude: (name: string, exclude: boolean) => Promise<void>;
-  /** Whether the processed virtual mic feeds this mix too; persisted. */
-  setBusMic: (name: string, mic: boolean) => Promise<void>;
   /** Which device list the mix shows up in. */
   setBusRole: (name: string, role: MixRole) => Promise<void>;
-  /** A mix's playback level for recorders (0-150%); persisted. */
+  /** A mix's playback level for recorders (0-100%); persisted. */
   setBusVolume: (name: string, volume: number) => Promise<void>;
   /** Mute a mix for recorders; persisted. */
   setBusMute: (name: string, muted: boolean) => Promise<void>;
-  /** One member's send level within one mix (0-150%; 100 = no override);
+  /** One member's send level within one mix (0-100%; 100 = no override);
    *  persisted, independent of the member's own volume. */
   setBusMemberGain: (bus: string, member: string, percent: number) => Promise<void>;
   /** Open (or focus) the popout window with one mix's send levels. */
@@ -158,7 +150,7 @@ interface MixerStore {
   clearError: () => void;
   initialized: boolean;
   /** True on the native PipeWire backend; false on the pactl fallback
-   * (mixes/mic/monitoring unavailable). Null until known. */
+   * (mixes/monitoring unavailable). Null until known. */
   backendNative: boolean | null;
   /** First-run tutorial visible. */
   showOnboarding: boolean;
@@ -323,26 +315,10 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   },
   channels: [],
   appStreams: [],
-  levels: {},
-  setLevels: (levels) => {
-    // Levels arrive at 10 Hz even when everything is silent; skipping
-    // no-op updates avoids re-rendering every strip 10×/second at idle.
-    const prev = get().levels;
-    const keys = Object.keys(levels);
-    const unchanged =
-      keys.length === Object.keys(prev).length &&
-      keys.every((k) => {
-        const a = prev[k];
-        const b = levels[k];
-        return a && Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4;
-      });
-    if (!unchanged) set({ levels });
-  },
   outputDevices: [],
   channelOutputs: {},
   resolvedOutputs: {},
   channelFailover: {},
-  micConfig: null,
   inputDevices: [],
   seenApps: [],
   profiles: [],
@@ -400,7 +376,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchProfiles(),
         get().fetchOutputs(),
         get().fetchEq(),
-        get().fetchMic(),
+        get().fetchInputDevices(),
         get().fetchBuses(),
         get().fetchRouting(),
       ]);
@@ -569,28 +545,13 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     });
   },
 
-  fetchMic: async () => {
+  fetchInputDevices: async () => {
     try {
-      const [micConfig, inputDevices] = await Promise.all([
-        invoke<MicConfig>("get_mic_config"),
-        invoke<OutputDevice[]>("get_input_devices"),
-      ]);
-      set({ micConfig, inputDevices });
+      const inputDevices = await invoke<OutputDevice[]>("get_input_devices");
+      set({ inputDevices });
     } catch (e) {
       set({ error: String(e) });
     }
-  },
-
-  setMicConfig: async (patch) => {
-    const current = get().micConfig;
-    if (!current) return;
-    const config = { ...current, ...patch };
-    set({ micConfig: config });
-    // Debounced: slider drags and rename typing settle into one apply.
-    debouncedInvoke("micConfig", "set_mic_config", { config }, (e) => {
-      set({ error: String(e) });
-      void get().fetchMic();
-    });
   },
 
   fetchProfiles: async () => {
@@ -849,18 +810,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }));
     try {
       await invoke("set_bus_role", { name, role });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
-  },
-
-  setBusMic: async (name, mic) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, mic } : b)),
-    }));
-    try {
-      await invoke("set_bus_mic", { name, mic });
     } catch (e) {
       set({ error: String(e) });
       await get().fetchBuses();

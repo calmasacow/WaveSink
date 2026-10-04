@@ -307,7 +307,7 @@ pub fn init_virtual_devices(
             .map_err(|e| e.to_string())?;
     }
 
-    let (outputs, eq, mic, buses, mix_outputs, hardware_inputs) = {
+    let (outputs, eq, buses, mix_outputs, hardware_inputs) = {
         let mut mixer = state.lock_mixer()?;
         mixer.init_defaults();
         // Refresh the matrix's compatibility projection after the starter
@@ -337,7 +337,6 @@ pub fn init_virtual_devices(
         (
             mixer.outputs.clone(),
             mixer.eq.clone(),
-            mixer.mic.clone(),
             mixer.buses.clone(),
             mixer
                 .routing
@@ -382,6 +381,25 @@ pub fn init_virtual_devices(
         }
     }
 
+    // Hardware inputs first: the mixes below route them and apply their
+    // per-mix gains (a muted cell is gain 0), which the backend only accepts
+    // for inputs it already knows.
+    for input in &hardware_inputs {
+        if let Err(e) = state.backend.set_hardware_input(
+            &input.id,
+            &input.source_name,
+            input.volume_percent,
+            input.muted,
+        ) {
+            eprintln!("wavesink: hardware input {} failed: {e}", input.id);
+        }
+        if input.fx.is_active() {
+            if let Err(e) = state.backend.set_input_fx(&input.id, &input.fx) {
+                eprintln!("wavesink: audio fx for {} failed: {e}", input.id);
+            }
+        }
+    }
+
     // Bring up the user's mixes and their memberships.
     let names: Vec<String> = defs.channels.iter().map(|c| c.name.clone()).collect();
     for bus in &buses.buses {
@@ -392,16 +410,12 @@ pub fn init_virtual_devices(
             eprintln!("wavesink: creating mix {} failed: {e}", bus.name);
             continue;
         }
-        if let Err(e) = state
-            .backend
-            .set_bus_members(&bus.name, &bus.effective_members(&names))
-        {
+        if let Err(e) = crate::commands::buses::push_bus_members(
+            &state,
+            &bus.name,
+            &bus.effective_members(&names),
+        ) {
             eprintln!("wavesink: members for mix {} failed: {e}", bus.name);
-        }
-        if bus.mic {
-            if let Err(e) = state.backend.set_bus_mic(&bus.name, true) {
-                eprintln!("wavesink: mic membership for mix {} failed: {e}", bus.name);
-            }
         }
         crate::commands::buses::apply_bus_level(state.backend.as_ref(), bus);
         crate::commands::buses::apply_bus_member_gains(state.backend.as_ref(), bus);
@@ -409,30 +423,6 @@ pub fn init_virtual_devices(
     for (mix, bindings) in mix_outputs {
         if let Err(e) = state.backend.set_mix_outputs(&mix, &bindings) {
             eprintln!("wavesink: output routing for mix {mix} failed: {e}");
-        }
-    }
-    for input in &hardware_inputs {
-        if let Err(e) = state.backend.set_hardware_input(
-            &input.id,
-            &input.source_name,
-            input.volume_percent,
-            input.muted,
-        ) {
-            eprintln!("wavesink: hardware input {} failed: {e}", input.id);
-        }
-    }
-
-    // Bring the mic chain up if it was enabled last session.
-    if mic.enabled {
-        let mut applied = mic.clone();
-        applied.output_label = prefs.decorate(&mic.output_label);
-        if let Err(e) = state.backend.set_mic_config(&applied) {
-            eprintln!("wavesink: mic chain init failed: {e}");
-            // Keep the UI honest: no chain is running, don't show the mic as
-            // enabled. In-memory only - the on-disk config restores it later.
-            if let Ok(mut mixer) = state.lock_mixer() {
-                mixer.mic.enabled = false;
-            }
         }
     }
 
@@ -711,4 +701,13 @@ mod tests {
         assert!(backend.moves().is_empty());
         assert_eq!(streams.len(), 1);
     }
+}
+
+/// Hardware capture devices (mics, capture cards) for adding a hardware input.
+#[tauri::command]
+pub fn get_input_devices(state: State<'_, AppState>) -> Result<Vec<OutputDevice>, String> {
+    state
+        .backend
+        .list_input_devices()
+        .map_err(|e| e.to_string())
 }

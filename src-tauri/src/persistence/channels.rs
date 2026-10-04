@@ -26,7 +26,7 @@ pub struct ChannelDef {
     /// Whether the channel feeds the Stream Mix source (default: yes).
     #[serde(default = "default_true")]
     pub stream_mix: bool,
-    /// Fader position (0-150%). Persisted so a channel keeps its level
+    /// Fader position (0-100%). Persisted so a channel keeps its level
     /// across restarts even when no profile is active.
     #[serde(default = "default_volume")]
     pub volume_percent: u8,
@@ -130,6 +130,8 @@ impl Channels {
                 && !crate::persistence::buses::is_bus_name(name)
                 && seen.insert(def.name.clone());
             if valid && channels.len() < MAX_CHANNELS {
+                let mut def = def;
+                def.volume_percent = def.volume_percent.min(crate::commands::routing::MAX_VOLUME);
                 channels.push(def);
             } else {
                 eprintln!(

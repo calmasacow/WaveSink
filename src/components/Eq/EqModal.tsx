@@ -5,7 +5,7 @@ import { defaultEqConfig, MAX_EQ_BANDS } from "../../types";
 import { Modal } from "../Modal";
 import { Ms } from "../Icons";
 import { Toggle } from "../Toggle";
-import { DspSlider } from "../Mic/DspSlider";
+import { DspSlider } from "../DspSlider";
 import { EqBandRow } from "./EqBandRow";
 import { bandColor, EqCurve } from "./EqCurve";
 import { EqPresetMenu } from "./EqPresetMenu";
