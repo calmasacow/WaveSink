@@ -289,5 +289,4 @@ mod tests {
         state.plan_auto_routes(&[stream(1, 10, "A", None)]);
         assert_eq!(state.auto_routed, HashSet::from([10]));
     }
-
 }

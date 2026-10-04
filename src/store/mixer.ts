@@ -73,6 +73,8 @@ interface MixerStore {
   setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
   setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
   setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
+  /** Solo an input (mutes every other one), or un-solo it and restore. */
+  toggleSolo: (inputId: string) => Promise<void>;
   updateHardwareInput: (
     inputId: string,
     label: string,
@@ -222,6 +224,15 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       await get().fetchRouting();
     }
+  },
+  toggleSolo: async (inputId) => {
+    try {
+      await invoke("toggle_solo", { inputId });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+    // Mutes changed on many inputs: refetch both views of them.
+    await Promise.all([get().fetchChannels(), get().fetchRouting()]);
   },
   setInputLevel: async (inputId, volume, muted) => {
     set((s) => ({

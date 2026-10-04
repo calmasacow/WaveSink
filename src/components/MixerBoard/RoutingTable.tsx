@@ -45,6 +45,7 @@ export function RoutingTable() {
   const removeHardwareInput = useMixerStore((s) => s.removeHardwareInput);
   const removeChannel = useMixerStore((s) => s.removeChannel);
   const setInputLevel = useMixerStore((s) => s.setInputLevel);
+  const toggleSolo = useMixerStore((s) => s.toggleSolo);
   const fetchInputDevices = useMixerStore((s) => s.fetchInputDevices);
   const [adding, setAdding] = useState<"input" | "mix" | null>(null);
   const [inputKind, setInputKind] = useState<"software" | "hardware">("software");
@@ -244,12 +245,19 @@ export function RoutingTable() {
                 >
                   <button
                     type="button"
-                    className="wave-input-icon"
+                    className={
+                      "wave-input-icon" + (routing?.solo?.input === input.id ? " soloed" : "")
+                    }
+                    onClick={() => setEditingInput(input.id)}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setEditingInput(input.id);
+                      void toggleSolo(input.id);
                     }}
-                    title="Right-click to edit input"
+                    title={
+                      routing?.solo?.input === input.id
+                        ? "Edit input · right-click to un-solo"
+                        : "Edit input · right-click to solo"
+                    }
                   >
                     <ChannelIcon id={input.icon} color={input.icon_color} />
                   </button>

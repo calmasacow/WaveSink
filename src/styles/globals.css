@@ -875,6 +875,12 @@ body,
   flex-direction: column;
   gap: var(--sp-4);
 }
+/* Children keep their natural height so a tall dialog scrolls instead of
+   squashing its content (a dialog that scrolls a child instead, like the
+   EQ, sets its own rules). */
+.modal > * {
+  flex-shrink: 0;
+}
 .modal.audio-fx-modal {
   --modal-w: 760px;
 }
@@ -1278,7 +1284,12 @@ body,
   border: 0;
   padding: 0;
   background: transparent;
-  cursor: default;
+  cursor: pointer;
+}
+/* Soloed: every other input is muted until this one is right-clicked again. */
+.wave-input-icon.soloed .channel-svg-icon {
+  outline: 3px solid var(--online);
+  outline-offset: 1px;
 }
 .wave-input .channel-svg-icon {
   width: 35px;
@@ -1529,12 +1540,11 @@ body,
 .audio-fx-btn {
   margin-left: auto;
 }
+/* Not a scroller of its own: a nested one swallowed the wheel and shrank
+   to a sliver, so the dialog itself is the only thing that scrolls. */
 .edit-mix-outputs {
   display: grid;
   gap: 7px;
-  max-height: min(240px, 30vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);

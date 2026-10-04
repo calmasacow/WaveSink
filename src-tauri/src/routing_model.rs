@@ -176,6 +176,15 @@ impl Default for RouteCell {
     }
 }
 
+/// One input heard on its own: every other input is muted until it is
+/// un-soloed, which puts back the mutes taken here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Solo {
+    pub input: String,
+    /// Each input's mute before the solo began.
+    pub restore: BTreeMap<String, bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoutingModel {
     pub version: u32,
@@ -184,6 +193,9 @@ pub struct RoutingModel {
     /// input id -> mix id -> cell
     #[serde(default)]
     pub routes: BTreeMap<String, BTreeMap<String, RouteCell>>,
+    /// Persisted so a restart mid-solo can still be un-soloed.
+    #[serde(default)]
+    pub solo: Option<Solo>,
 }
 
 impl Default for RoutingModel {
@@ -193,6 +205,7 @@ impl Default for RoutingModel {
             inputs: Vec::new(),
             mixes: Vec::new(),
             routes: BTreeMap::new(),
+            solo: None,
         }
     }
 }
@@ -397,6 +410,7 @@ impl RoutingModel {
             inputs,
             mixes,
             routes,
+            solo: None,
         }
     }
 
@@ -701,6 +715,58 @@ impl RoutingModel {
         }
     }
 
+    /// Solo `id`, or un-solo it when it already is. Soloing mutes every other
+    /// input (and unmutes `id`); un-soloing puts every input's earlier mute
+    /// back. Soloing a different input moves the solo, restoring first.
+    /// Returns the inputs whose mute changed.
+    pub fn toggle_solo(&mut self, id: &str) -> Result<Vec<String>, SinkError> {
+        if self.input(id).is_none() {
+            return Err(SinkError::UnknownSink(id.to_string()));
+        }
+        let mut changed = Vec::new();
+        let mut set_muted = |inputs: &mut Vec<InputDef>, target: &str, muted: bool| {
+            if let Some(input) = inputs.iter_mut().find(|i| i.id == target) {
+                if input.muted != muted {
+                    input.muted = muted;
+                    if !changed.iter().any(|c: &String| c == target) {
+                        changed.push(target.to_string());
+                    }
+                }
+            }
+        };
+        let previous = self.solo.take();
+        if let Some(solo) = &previous {
+            // Inputs removed during the solo are simply skipped; ones added
+            // during it keep whatever they are.
+            for (input, muted) in &solo.restore {
+                set_muted(&mut self.inputs, input, *muted);
+            }
+        }
+        if previous.is_some_and(|solo| solo.input == id) {
+            return Ok(changed);
+        }
+        let restore = self
+            .inputs
+            .iter()
+            .map(|i| (i.id.clone(), i.muted))
+            .collect::<BTreeMap<_, _>>();
+        let others: Vec<String> = self
+            .inputs
+            .iter()
+            .filter(|i| i.id != id)
+            .map(|i| i.id.clone())
+            .collect();
+        for other in others {
+            set_muted(&mut self.inputs, &other, true);
+        }
+        set_muted(&mut self.inputs, id, false);
+        self.solo = Some(Solo {
+            input: id.to_string(),
+            restore,
+        });
+        Ok(changed)
+    }
+
     /// The software channels as the strip list the UI and app routing use.
     pub fn channel_list(&self) -> Vec<crate::audio::types::VirtualSink> {
         self.channels()
@@ -972,6 +1038,42 @@ mod tests {
             model.remove_input("sink_system").is_err(),
             "last channel stays"
         );
+    }
+
+    #[test]
+    fn solo_mutes_the_others_and_unsolo_restores_them() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        model.input_mut("sink_music").unwrap().muted = true; // muted before
+        model.input_mut("sink_chat").unwrap().muted = true; // the one soloed
+
+        model.toggle_solo("sink_chat").unwrap();
+        let muted = |m: &RoutingModel, id: &str| m.input(id).unwrap().muted;
+        assert!(!muted(&model, "sink_chat"), "the soloed input is heard");
+        assert!(muted(&model, "sink_game") && muted(&model, "sink_system"));
+        assert_eq!(model.solo.as_ref().unwrap().input, "sink_chat");
+
+        model.toggle_solo("sink_chat").unwrap();
+        assert!(model.solo.is_none());
+        assert!(!muted(&model, "sink_game") && !muted(&model, "sink_system"));
+        assert!(
+            muted(&model, "sink_music") && muted(&model, "sink_chat"),
+            "earlier mutes back"
+        );
+    }
+
+    #[test]
+    fn soloing_another_input_moves_the_solo() {
+        let (channels, buses) = legacy_with_mix();
+        let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
+        model.toggle_solo("sink_game").unwrap();
+        model.toggle_solo("sink_music").unwrap();
+        let muted = |id: &str| model.input(id).unwrap().muted;
+        assert!(!muted("sink_music") && muted("sink_game") && muted("sink_chat"));
+        // Un-soloing returns to the state before the *first* solo: all heard.
+        model.toggle_solo("sink_music").unwrap();
+        assert!(model.inputs.iter().all(|i| !i.muted));
+        assert!(model.toggle_solo("sink_nope").is_err());
     }
 
     #[test]

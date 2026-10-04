@@ -153,6 +153,8 @@ export interface RoutingModel {
   inputs: RoutingInput[];
   mixes: RoutingMix[];
   routes: Record<string, Record<string, RouteCell>>;
+  /** One input heard alone; `restore` holds every input's earlier mute. */
+  solo?: { input: string; restore: Record<string, boolean> } | null;
 }
 
 /** Profile listing entry; trigger_device auto-loads the profile. */

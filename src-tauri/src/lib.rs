@@ -183,6 +183,7 @@ pub fn run() {
             commands::matrix::reorder_matrix_mixes,
             commands::matrix::add_hardware_input,
             commands::matrix::set_route_cell,
+            commands::matrix::toggle_solo,
             commands::matrix::set_input_level,
             commands::matrix::update_hardware_input,
             commands::matrix::remove_hardware_input,

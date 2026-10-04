@@ -161,6 +161,38 @@ pub fn set_route_cell(
     crate::commands::graph::apply_mix_routes(&state, &model, &mix_id).map_err(|e| e.to_string())
 }
 
+/// Solo an input (every other input muted) or, when it already is, un-solo it
+/// and put the earlier mutes back. Bound to right-clicking an input's icon.
+#[tauri::command]
+pub fn toggle_solo(state: State<'_, AppState>, input_id: String) -> Result<(), String> {
+    let (model, changed) = {
+        let mut mixer = state.lock_mixer()?;
+        let changed = mixer
+            .routing
+            .toggle_solo(&input_id)
+            .map_err(|e| e.to_string())?;
+        mixer.routing.save().map_err(|e| e.to_string())?;
+        crate::commands::profiles::autosave_active(&mixer);
+        (mixer.routing.clone(), changed)
+    };
+    for id in changed {
+        let Some(input) = model.input(&id) else {
+            continue;
+        };
+        let applied = match input.kind {
+            InputKind::Software => state.backend.set_sink_mute(&input.id, input.muted),
+            InputKind::Hardware => state.backend.set_hardware_input(
+                &input.id,
+                &input.source_name,
+                input.volume_percent,
+                input.muted,
+            ),
+        };
+        applied.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_input_level(
     state: State<'_, AppState>,
