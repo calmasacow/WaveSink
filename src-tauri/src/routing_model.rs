@@ -1028,7 +1028,7 @@ mod tests {
         let (channels, buses) = legacy_with_mix();
         let mut model = RoutingModel::from_legacy(&channels, &buses, &ChannelOutputs::default());
         model.remove_input("sink_game").unwrap();
-        assert!(model.routes.get("sink_game").is_none());
+        assert!(!model.routes.contains_key("sink_game"));
         assert!(!model
             .members("sink_bus_stream")
             .contains(&"sink_game".to_string()));

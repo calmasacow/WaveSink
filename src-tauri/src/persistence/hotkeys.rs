@@ -8,19 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HotkeyConfig {
     /// Action id -> accelerator, X11 only.
     #[serde(default)]
     pub bindings: BTreeMap<String, String>,
-}
-
-impl Default for HotkeyConfig {
-    fn default() -> Self {
-        Self {
-            bindings: BTreeMap::new(),
-        }
-    }
 }
 
 impl HotkeyConfig {
