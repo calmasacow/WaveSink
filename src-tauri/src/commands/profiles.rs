@@ -152,9 +152,6 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
     // ---- mix bus reconciliation ----
     let _rebuild = state.lock_bus_rebuild();
     let mut target_buses = profile.buses.clone();
-    for bus in &mut target_buses.buses {
-        bus.role = crate::persistence::buses::MixRole::Recording;
-    }
     let names: Vec<String> = profile.channels.iter().map(|c| c.name.clone()).collect();
     target_buses
         .buses
@@ -174,22 +171,11 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         }
     }
     for bus in &target_buses.buses {
-        // A mix whose role differs is a different kind of node, so the live
-        // one cannot be reused.
-        let live_role = current_buses.get(&bus.name).map(|b| b.role);
-        if live_role.is_some_and(|role| role != bus.role) {
-            if let Err(e) = state.backend.destroy_bus(&bus.name) {
-                eprintln!(
-                    "wavesink: rebuilding mix {} for profile failed: {e}",
-                    bus.name
-                );
-            }
-        }
-        if live_role != Some(bus.role) {
-            if let Err(e) =
-                state
-                    .backend
-                    .create_bus(&bus.name, &prefs.decorate(&bus.label), bus.role)
+        // A mix already live is reused; only missing ones are created.
+        if current_buses.get(&bus.name).is_none() {
+            if let Err(e) = state
+                .backend
+                .create_bus(&bus.name, &prefs.decorate(&bus.label))
             {
                 eprintln!("wavesink: profile mix {} failed: {e}", bus.name);
                 continue;
@@ -233,7 +219,6 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
                     label: c.label.clone(),
                     icon: c.icon.clone(),
                     icon_color: c.icon_color.clone(),
-                    stream_mix: c.stream_mix,
                     // Carry levels into the persisted defs so channels.json
                     // stays the single source of truth.
                     volume_percent: c.volume_percent,
@@ -291,7 +276,6 @@ pub fn create_blank_profile(app: tauri::AppHandle, name: String) -> Result<(), S
             icon_color: def.icon_color,
             volume_percent: 100,
             muted: false,
-            stream_mix: def.stream_mix,
         })
         .collect();
     let profile = Profile {

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
-use crate::persistence::buses::{Buses, MixRole};
+use crate::persistence::buses::Buses;
 use crate::persistence::channels::Channels;
 use crate::persistence::outputs::ChannelOutputs;
 
@@ -152,8 +152,6 @@ pub struct MixDef {
     #[serde(default)]
     pub output_bindings: Vec<OutputBinding>,
     pub order: u32,
-    #[serde(default)]
-    pub role: MixRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -184,10 +182,6 @@ pub struct RoutingModel {
     /// input id -> mix id -> cell
     #[serde(default)]
     pub routes: BTreeMap<String, BTreeMap<String, RouteCell>>,
-    #[serde(default)]
-    pub monitor_mix: Option<String>,
-    #[serde(default)]
-    pub hidden_devices: Vec<String>,
 }
 
 impl Default for RoutingModel {
@@ -197,8 +191,6 @@ impl Default for RoutingModel {
             inputs: Vec::new(),
             mixes: Vec::new(),
             routes: BTreeMap::new(),
-            monitor_mix: None,
-            hidden_devices: Vec::new(),
         }
     }
 }
@@ -356,7 +348,6 @@ impl RoutingModel {
                     Vec::new()
                 },
                 order: order as u32,
-                role: b.role,
             })
             .collect::<Vec<_>>();
         let mut routes = BTreeMap::new();
@@ -383,8 +374,6 @@ impl RoutingModel {
             inputs,
             mixes,
             routes,
-            monitor_mix: None,
-            hidden_devices: Vec::new(),
         }
     }
 
@@ -453,7 +442,6 @@ mod tests {
             muted: false,
             output_bindings: outputs,
             order: 0,
-            role: crate::persistence::buses::MixRole::Recording,
         }
     }
 

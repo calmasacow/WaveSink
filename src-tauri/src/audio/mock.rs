@@ -177,12 +177,7 @@ impl AudioBackend for MockBackend {
         Ok(())
     }
 
-    fn create_bus(
-        &self,
-        name: &str,
-        _label: &str,
-        _role: crate::persistence::buses::MixRole,
-    ) -> Result<(), SinkError> {
+    fn create_bus(&self, name: &str, _label: &str) -> Result<(), SinkError> {
         self.record_bus(Call::CreateBus(name.to_string()));
         Ok(())
     }
@@ -224,10 +219,6 @@ impl AudioBackend for MockBackend {
         _name: &str,
         _outputs: &[crate::routing_model::OutputBinding],
     ) -> Result<(), SinkError> {
-        Ok(())
-    }
-
-    fn set_monitor(&self, _name: &str, _enabled: bool) -> Result<(), SinkError> {
         Ok(())
     }
 

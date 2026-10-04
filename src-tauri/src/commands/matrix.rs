@@ -437,47 +437,6 @@ pub fn remove_hardware_input(state: State<'_, AppState>, input_id: String) -> Re
 }
 
 #[tauri::command]
-pub fn set_mix_monitor(state: State<'_, AppState>, mix_id: String) -> Result<(), String> {
-    let previous = {
-        let mut mixer = state.lock_mixer()?;
-        if !mixer.buses.buses.iter().any(|mix| mix.name == mix_id) {
-            return Err(format!("unknown mix {mix_id}"));
-        }
-        if !mixer.routing.mixes.iter().any(|mix| mix.id == mix_id) {
-            mixer.routing.mixes =
-                RoutingModel::from_legacy(&mixer.channel_defs, &mixer.buses, &mixer.outputs).mixes;
-        }
-        let previous = mixer.routing.monitor_mix.replace(mix_id.clone());
-        mixer.routing.save().map_err(|e| e.to_string())?;
-        previous
-    };
-    if let Some(previous) = previous {
-        let _ = state.backend.set_monitor(&previous, false);
-    }
-    state
-        .backend
-        .set_monitor(&mix_id, true)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn clear_mix_monitor(state: State<'_, AppState>) -> Result<(), String> {
-    let previous = {
-        let mut mixer = state.lock_mixer()?;
-        let previous = mixer.routing.monitor_mix.take();
-        mixer.routing.save().map_err(|e| e.to_string())?;
-        previous
-    };
-    if let Some(previous) = previous {
-        state
-            .backend
-            .set_monitor(&previous, false)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub fn set_mix_outputs(
     state: State<'_, AppState>,
     mix_id: String,
@@ -508,13 +467,6 @@ pub fn set_mix_outputs(
     mixer.routing.save().map_err(|e| e.to_string())?;
     crate::commands::profiles::autosave_active(&mixer);
     Ok(())
-}
-
-#[tauri::command]
-pub fn set_hidden_devices(state: State<'_, AppState>, devices: Vec<String>) -> Result<(), String> {
-    let mut mixer = state.lock_mixer()?;
-    mixer.routing.hidden_devices = devices;
-    mixer.routing.save().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

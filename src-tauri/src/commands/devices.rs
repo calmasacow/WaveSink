@@ -390,7 +390,7 @@ pub fn init_virtual_devices(
     for bus in &buses.buses {
         if let Err(e) = state
             .backend
-            .create_bus(&bus.name, &prefs.decorate(&bus.label), bus.role)
+            .create_bus(&bus.name, &prefs.decorate(&bus.label))
         {
             eprintln!("wavesink: creating mix {} failed: {e}", bus.name);
             continue;

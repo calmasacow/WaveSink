@@ -23,9 +23,6 @@ pub struct ChannelDef {
     /// Stable palette token used behind the bundled SVG icon.
     #[serde(default)]
     pub icon_color: Option<String>,
-    /// Whether the channel feeds the Stream Mix source (default: yes).
-    #[serde(default = "default_true")]
-    pub stream_mix: bool,
     /// Fader position (0-100%). Persisted so a channel keeps its level
     /// across restarts even when no profile is active.
     #[serde(default = "default_volume")]
@@ -33,10 +30,6 @@ pub struct ChannelDef {
     /// Muted state, persisted alongside the volume.
     #[serde(default)]
     pub muted: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_volume() -> u8 {
@@ -57,7 +50,6 @@ impl Default for Channels {
             label: label.to_string(),
             icon: Some(icon.to_string()),
             icon_color: Some("blue".to_string()),
-            stream_mix: true,
             volume_percent: default_volume(),
             muted: false,
         };
@@ -234,7 +226,6 @@ impl Channels {
             label: label.to_string(),
             icon,
             icon_color,
-            stream_mix: true,
             volume_percent: default_volume(),
             muted: false,
         };
@@ -394,8 +385,8 @@ mod tests {
 
     #[test]
     fn parse_keeps_valid_and_fills_serde_defaults() {
-        // Bug shape: old-shape entries (no icon / stream_mix) must still load
-        // via serde defaults.
+        // Bug shape: old-shape entries (no icon, or the retired stream_mix
+        // flag) must still load via serde defaults.
         let raw = r#"{"channels":[
             {"name":"sink_game","label":"Game"},
             {"name":"sink_music","label":"Music","icon":"music_note","stream_mix":false}
@@ -403,8 +394,6 @@ mod tests {
         let c = Channels::parse(raw).expect("valid json");
         assert_eq!(c.channels.len(), 2);
         assert_eq!(c.channels[0].icon, None);
-        assert!(c.channels[0].stream_mix, "missing stream_mix defaults true");
-        assert!(!c.channels[1].stream_mix);
     }
 
     #[test]

@@ -137,20 +137,10 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
-    fn create_bus(
-        &self,
-        name: &str,
-        label: &str,
-        role: crate::persistence::buses::MixRole,
-    ) -> Result<(), SinkError> {
+    fn create_bus(&self, name: &str, label: &str) -> Result<(), SinkError> {
         let name = name.to_string();
         let label = label.to_string();
-        self.request(|reply| Cmd::CreateBus {
-            name,
-            label,
-            role,
-            reply,
-        })
+        self.request(|reply| Cmd::CreateBus { name, label, reply })
     }
 
     fn destroy_bus(&self, name: &str) -> Result<(), SinkError> {
@@ -215,15 +205,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::SetMixOutputs {
             name: name.to_string(),
             outputs: outputs.to_vec(),
-            reply,
-        })
-    }
-
-    fn set_monitor(&self, name: &str, enabled: bool) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetMonitor {
-            name,
-            enabled,
             reply,
         })
     }

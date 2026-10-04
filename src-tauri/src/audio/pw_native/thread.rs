@@ -85,7 +85,6 @@ pub enum Cmd {
     CreateBus {
         name: String,
         label: String,
-        role: crate::persistence::buses::MixRole,
         reply: Reply<()>,
     },
     /// Destroy a mix bus and its links.
@@ -120,12 +119,6 @@ pub enum Cmd {
     SetMixOutputs {
         name: String,
         outputs: Vec<crate::routing_model::OutputBinding>,
-        reply: Reply<()>,
-    },
-    /// Listen to a channel/mix/mic on the default output (session scoped).
-    SetMonitor {
-        name: String,
-        enabled: bool,
         reply: Reply<()>,
     },
     /// A hardware input's Audio FX (build/drop/re-tune its chain).
@@ -241,9 +234,6 @@ struct State {
     mix_outputs: HashMap<String, Vec<String>>,
     /// (mix, output node name) -> live links.
     mix_output_links: HashMap<(String, String), LinkSet>,
-    /// Nodes monitored on the default output, and their live links.
-    monitored: std::collections::HashSet<String>,
-    monitor_links: HashMap<String, LinkSet>,
     /// Per-channel EQ configs (source of truth for chain (re)creation -
     /// kept even while disabled so re-enabling restores the bands).
     eq_configs: HashMap<String, EqConfig>,
@@ -1216,49 +1206,6 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
         }
     }
 
-    // ---- monitor links (listen on the default output, session scoped) ----
-    // Same guard: our own nodes shouldn't feed back what they carry.
-    let default_id = s
-        .default_sink_name
-        .as_ref()
-        .filter(|name| !is_own_sink(name))
-        .and_then(|name| node_ids.get(name))
-        .copied();
-    let monitored: Vec<String> = s.monitored.iter().cloned().collect();
-    for name in monitored {
-        // Monitoring an EQ'd channel listens to the insert's output - the
-        // same audio its device/buses hear.
-        let node_id = node_ids
-            .get(&name)
-            .copied()
-            .map(|id| resolve_source(s.eq_playback_node(&name), id));
-        if let (Some(node), Some(default)) = (node_id, default_id) {
-            if node_ids.get(&name).copied() != Some(node) {
-                eq_targets.entry(node).or_default().insert(default);
-            }
-        }
-        let pairs = match (node_id, default_id) {
-            (Some(node), Some(default)) => desired_pairs(&s, node, default),
-            _ => Vec::new(),
-        };
-        let current: Vec<(u32, u32)> = s
-            .monitor_links
-            .get(&name)
-            .map(|links| links.iter().map(|(o, i, _)| (*o, *i)).collect())
-            .unwrap_or_default();
-        if current != pairs {
-            s.monitor_links.remove(&name);
-            if !pairs.is_empty() {
-                if let (Some(node), Some(default)) = (node_id, default_id) {
-                    let created = create_links(&core, &name, node, default, &pairs);
-                    if !created.is_empty() {
-                        s.monitor_links.insert(name, created);
-                    }
-                }
-            }
-        }
-    }
-
     // Publish the EQ link plan for the police (see on_global's Link arm).
     s.eq_desired_targets = eq_targets;
 }
@@ -1271,10 +1218,6 @@ enum NodeKind {
 }
 
 impl NodeKind {
-    fn mix(_role: crate::persistence::buses::MixRole) -> Self {
-        Self::MixSource
-    }
-
     fn is_mix(self) -> bool {
         matches!(self, Self::MixSource)
     }
@@ -1483,13 +1426,8 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
             let s = state.borrow();
             let _ = reply.send(set_props(s.nodes.get(&id), Some(percent), None));
         }
-        Cmd::CreateBus {
-            name,
-            label,
-            role,
-            reply,
-        } => {
-            let kind = NodeKind::mix(role);
+        Cmd::CreateBus { name, label, reply } => {
+            let kind = NodeKind::MixSource;
             let mut s = state.borrow_mut();
             if s.bus_sources.contains_key(&name) || s.node_by_name(&name).is_some() {
                 s.desired.insert(name, (label, kind)); // adopted - keep alive
@@ -1643,23 +1581,6 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                 s.mix_outputs.insert(name.clone(), enabled.clone());
                 s.mix_output_links
                     .retain(|(mix, output), _| mix != &name || enabled.contains(output));
-            }
-            ensure_all_links(state);
-            let _ = reply.send(Ok(()));
-        }
-        Cmd::SetMonitor {
-            name,
-            enabled,
-            reply,
-        } => {
-            {
-                let mut s = state.borrow_mut();
-                if enabled {
-                    s.monitored.insert(name);
-                } else {
-                    s.monitored.remove(&name);
-                    s.monitor_links.remove(&name);
-                }
             }
             ensure_all_links(state);
             let _ = reply.send(Ok(()));
@@ -1907,22 +1828,9 @@ mod tests {
     }
 
     #[test]
-    fn a_mix_takes_the_node_shape_its_role_asks_for() {
-        use crate::persistence::buses::MixRole;
-        assert_eq!(
-            NodeKind::mix(MixRole::Recording).media_class(),
-            VIRTUAL_SOURCE_CLASS
-        );
-        assert_eq!(
-            NodeKind::mix(MixRole::Playback).media_class(),
-            VIRTUAL_SOURCE_CLASS
-        );
-        // Both shapes are still a mix: the member and send-level commands
-        // gate on that.
-        assert!(
-            NodeKind::mix(MixRole::Recording).is_mix() && NodeKind::mix(MixRole::Playback).is_mix()
-        );
-        assert!(!NodeKind::Channel.is_mix());
+    fn a_mix_is_a_capturable_virtual_source() {
+        assert_eq!(NodeKind::MixSource.media_class(), VIRTUAL_SOURCE_CLASS);
+        assert!(NodeKind::MixSource.is_mix() && !NodeKind::Channel.is_mix());
     }
 
     #[test]

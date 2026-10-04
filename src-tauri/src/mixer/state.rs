@@ -60,7 +60,6 @@ impl MixerState {
                 icon_color: def.icon_color.clone(),
                 volume_percent: def.volume_percent,
                 muted: def.muted,
-                stream_mix: def.stream_mix,
             })
             .collect();
         self.initialized = true;

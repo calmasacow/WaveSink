@@ -30,15 +30,6 @@ pub struct Prefs {
     /// First-run tutorial completed (false = show it on launch).
     #[serde(default)]
     pub onboarded: bool,
-    /// ChatMix-style balance: the two channel sink names being balanced
-    /// (None = auto: Game/Chat when present, else the first two channels).
-    #[serde(default)]
-    pub balance_a: Option<String>,
-    #[serde(default)]
-    pub balance_b: Option<String>,
-    /// Show the balance slider in the title bar.
-    #[serde(default = "default_true")]
-    pub show_balance: bool,
     /// When autostarting on login, boot straight to the tray instead of
     /// showing the window (only meaningful with autostart enabled).
     #[serde(default)]
@@ -54,10 +45,6 @@ pub struct Prefs {
     pub meter_unfocused: MeterUnfocused,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 fn default_meter_fps() -> u8 {
     30
 }
@@ -66,9 +53,6 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             onboarded: false,
-            balance_a: None,
-            balance_b: None,
-            show_balance: true,
             start_minimized: false,
             meter_pro: false,
             meter_fps: default_meter_fps(),

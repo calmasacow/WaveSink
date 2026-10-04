@@ -317,10 +317,6 @@ pub struct AppStream {
     pub settled: bool,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 /// One of the user-defined virtual channels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VirtualSink {
@@ -335,9 +331,6 @@ pub struct VirtualSink {
     pub icon_color: Option<String>,
     pub volume_percent: u8,
     pub muted: bool,
-    /// Whether this channel feeds the Stream Mix source (what OBS records).
-    #[serde(default = "default_true")]
-    pub stream_mix: bool,
 }
 
 /// A physical audio output device.

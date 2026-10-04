@@ -181,11 +181,8 @@ pub fn run() {
             commands::buses::remove_bus,
             commands::buses::set_bus_members,
             commands::buses::set_bus_exclude,
-            commands::buses::set_bus_role,
             commands::buses::set_bus_volume,
             commands::buses::set_bus_mute,
-            commands::buses::set_bus_member_gain,
-            commands::buses::open_mix_fader_window,
             commands::matrix::get_routing_model,
             commands::matrix::reorder_matrix_inputs,
             commands::matrix::reorder_matrix_mixes,
@@ -194,17 +191,13 @@ pub fn run() {
             commands::matrix::set_input_level,
             commands::matrix::update_hardware_input,
             commands::matrix::remove_hardware_input,
-            commands::matrix::set_mix_monitor,
-            commands::matrix::clear_mix_monitor,
             commands::matrix::set_mix_outputs,
-            commands::matrix::set_hidden_devices,
             commands::matrix::set_input_fx,
             commands::routing::route_app_to_channel,
             commands::routing::set_channel_volume,
             commands::routing::toggle_channel_mute,
             commands::routing::set_app_volume,
             commands::routing::rename_app,
-            commands::routing::set_monitor,
             commands::devices::get_input_devices,
             commands::eq::get_channel_eq_configs,
             commands::eq::set_channel_eq,
@@ -226,15 +219,12 @@ pub fn run() {
             commands::settings::set_autostart,
             commands::settings::get_prefs,
             commands::settings::set_onboarded,
-            commands::settings::set_balance_channels,
-            commands::settings::set_balance_visible,
             commands::settings::set_start_minimized,
             commands::settings::set_meter_prefs,
             commands::settings::reset_app,
             commands::hotkeys::get_hotkeys,
             commands::hotkeys::configure_hotkeys,
             commands::hotkeys::set_hotkey_binding,
-            commands::hotkeys::set_balance_step,
         ])
         .setup(move |app| {
             if let Err(error) = persistence::autostart::migrate_legacy_unit() {
@@ -262,8 +252,7 @@ pub fn run() {
             spawn_route_enforcer(app.handle().clone());
             Ok(())
         })
-        // Close button hides to tray instead of quitting - main window
-        // only; a mix's popout just closes.
+        // Close button hides to tray instead of quitting.
         .on_window_event(|window, event| {
             if window.label() != "main" {
                 return;

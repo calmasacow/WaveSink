@@ -147,34 +147,6 @@ pub fn toggle_channel_mute(
     defs.save().map_err(|e| e.to_string())
 }
 
-/// Listen to a channel/mix/mic on the default output (session scoped -
-/// not persisted, cleared on restart).
-#[tauri::command]
-pub fn set_monitor(
-    state: State<'_, AppState>,
-    sink_name: String,
-    enabled: bool,
-) -> Result<(), String> {
-    // Monitoring is scoped to our own nodes: a channel or a mix bus - not any
-    // arbitrary session sink.
-    {
-        let mixer = state.lock_mixer()?;
-        let known = mixer
-            .channel_defs
-            .channels
-            .iter()
-            .any(|c| c.name == sink_name)
-            || mixer.buses.buses.iter().any(|b| b.name == sink_name);
-        if !known {
-            return Err(format!("unknown monitor target: {sink_name}"));
-        }
-    }
-    state
-        .backend
-        .set_monitor(&sink_name, enabled)
-        .map_err(|e| e.to_string())
-}
-
 /// Set or clear a persistent display name for an app, keyed by its stream
 /// identity. An empty `alias` reverts to the discovered name.
 #[tauri::command]

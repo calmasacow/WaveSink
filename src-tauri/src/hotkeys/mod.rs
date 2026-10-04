@@ -1,4 +1,4 @@
-//! Global hotkeys for profile switching and the balance slider: the desktop
+//! Global hotkeys for profile switching: the desktop
 //! portal under Wayland, direct key grabs on a portal-less X11 session.
 
 pub mod portal;
@@ -16,27 +16,15 @@ use crate::state::AppState;
 pub enum Action {
     ProfileNext,
     ProfilePrev,
-    BalanceA,
-    BalanceB,
-    BalanceCenter,
 }
 
 impl Action {
-    pub const ALL: [Action; 5] = [
-        Action::ProfileNext,
-        Action::ProfilePrev,
-        Action::BalanceA,
-        Action::BalanceB,
-        Action::BalanceCenter,
-    ];
+    pub const ALL: [Action; 2] = [Action::ProfileNext, Action::ProfilePrev];
 
     pub fn id(self) -> &'static str {
         match self {
             Action::ProfileNext => "profile.next",
             Action::ProfilePrev => "profile.prev",
-            Action::BalanceA => "balance.a",
-            Action::BalanceB => "balance.b",
-            Action::BalanceCenter => "balance.center",
         }
     }
 
@@ -48,9 +36,6 @@ impl Action {
         match self {
             Action::ProfileNext => "Next profile",
             Action::ProfilePrev => "Previous profile",
-            Action::BalanceA => "Balance toward A",
-            Action::BalanceB => "Balance toward B",
-            Action::BalanceCenter => "Center the balance",
         }
     }
 
@@ -59,9 +44,6 @@ impl Action {
         match self {
             Action::ProfileNext => "CTRL+ALT+bracketright",
             Action::ProfilePrev => "CTRL+ALT+bracketleft",
-            Action::BalanceA => "CTRL+ALT+comma",
-            Action::BalanceB => "CTRL+ALT+period",
-            Action::BalanceCenter => "CTRL+ALT+slash",
         }
     }
 
@@ -70,9 +52,6 @@ impl Action {
         match self {
             Action::ProfileNext => "Ctrl+Alt+BracketRight",
             Action::ProfilePrev => "Ctrl+Alt+BracketLeft",
-            Action::BalanceA => "Ctrl+Alt+Comma",
-            Action::BalanceB => "Ctrl+Alt+Period",
-            Action::BalanceCenter => "Ctrl+Alt+Slash",
         }
     }
 }
@@ -90,8 +69,6 @@ pub struct HotkeyStatus {
     /// "portal", "x11" or "none".
     pub backend: &'static str,
     pub shortcuts: Vec<ShortcutInfo>,
-    pub balance_step: u8,
-    pub steps: [u8; 4],
 }
 
 #[derive(Default)]
@@ -142,10 +119,6 @@ impl Hotkeys {
             Backend::X11(h) => Backend::X11(h.clone()),
             Backend::None => Backend::None,
         }
-    }
-
-    pub fn config(&self) -> HotkeyConfig {
-        lock(&self.config).clone()
     }
 
     pub fn update_config(&self, change: impl FnOnce(&mut HotkeyConfig)) -> HotkeyConfig {
@@ -229,9 +202,6 @@ pub fn perform(app: &AppHandle, action: Action) {
         let result = match action {
             Action::ProfileNext => switch_profile(&app, 1),
             Action::ProfilePrev => switch_profile(&app, -1),
-            Action::BalanceA => nudge_balance(&app, -1),
-            Action::BalanceB => nudge_balance(&app, 1),
-            Action::BalanceCenter => set_balance(&app, 0.0),
         };
         if let Err(e) = result {
             eprintln!("wavesink: hotkey {} failed: {e}", action.id());
@@ -269,72 +239,6 @@ pub fn next_profile<'a>(names: &[&'a str], active: Option<&str>, direction: i32)
     names[index as usize]
 }
 
-/// The slider position for a pair of volumes: + favours B, - favours A.
-pub fn balance_position(a: u8, b: u8) -> f32 {
-    (f32::from(b) - f32::from(a)) / 100.0
-}
-
-/// Volumes for a position. No centre dead zone: a one-point step must move.
-pub fn balance_volumes(position: f32) -> (u8, u8) {
-    let p = position.clamp(-1.0, 1.0);
-    let a = (100.0 * (1.0 - p).min(1.0)).round() as u8;
-    let b = (100.0 * (1.0 + p).min(1.0)).round() as u8;
-    (a, b)
-}
-
-/// A channel name with its current volume.
-type Level = (String, u8);
-
-/// The pair the balance slider works on: the preference, else Game and
-/// Chat, else the first two channels.
-fn balance_pair(state: &AppState) -> Result<Option<(Level, Level)>, String> {
-    let mixer = state.lock_mixer()?;
-    let channels = &mixer.channel_defs.channels;
-    let find = |name: &str| {
-        channels
-            .iter()
-            .find(|c| c.name == name)
-            .map(|c| (c.name.clone(), c.volume_percent))
-    };
-    let nth = |i: usize| channels.get(i).map(|c| (c.name.clone(), c.volume_percent));
-    let a = mixer
-        .prefs
-        .balance_a
-        .as_deref()
-        .and_then(find)
-        .or_else(|| find("sink_game"))
-        .or_else(|| nth(0));
-    let b = mixer
-        .prefs
-        .balance_b
-        .as_deref()
-        .and_then(find)
-        .or_else(|| find("sink_chat"))
-        .or_else(|| nth(1));
-    Ok(a.zip(b).filter(|(a, b)| a.0 != b.0))
-}
-
-fn nudge_balance(app: &AppHandle, direction: i32) -> Result<(), String> {
-    let step = f32::from(app.state::<Hotkeys>().config().balance_step) / 100.0;
-    let state = app.state::<AppState>();
-    let Some((a, b)) = balance_pair(&state)? else {
-        return Ok(());
-    };
-    set_balance(app, balance_position(a.1, b.1) + direction as f32 * step)
-}
-
-fn set_balance(app: &AppHandle, position: f32) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let Some((a, b)) = balance_pair(&state)? else {
-        return Ok(());
-    };
-    let (va, vb) = balance_volumes(position);
-    crate::commands::routing::set_channel_volume(app.state(), a.0, va)?;
-    crate::commands::routing::set_channel_volume(app.state(), b.0, vb)?;
-    let _ = app.emit("channels-changed", ());
-    Ok(())
-}
-
 /// Launchers don't always pass the session type on; a bare X display is
 /// still X11, while XWayland leaves both displays set and keys ungrabbable.
 fn session_is_x11(session_type: Option<&str>, display: bool, wayland_display: bool) -> bool {
@@ -357,35 +261,6 @@ mod tests {
         assert_eq!(next_profile(&names, Some("Default"), -1), "Night");
         assert_eq!(next_profile(&names, None, 1), "Default");
         assert_eq!(next_profile(&names, Some("gone"), -1), "Default");
-    }
-
-    #[test]
-    fn balance_maths_matches_the_slider() {
-        assert_eq!(balance_volumes(0.0), (100, 100));
-        assert_eq!(balance_volumes(0.5), (50, 100));
-        assert_eq!(balance_volumes(-0.25), (100, 75));
-        assert_eq!(balance_volumes(2.0), (0, 100), "clamped");
-        assert_eq!(balance_position(50, 100), 0.5);
-        assert_eq!(balance_position(100, 75), -0.25);
-    }
-
-    #[test]
-    fn a_step_moves_the_position_by_the_step() {
-        let (a, b) = balance_volumes(balance_position(100, 100) + 0.10);
-        assert_eq!((a, b), (90, 100));
-        let (a, b) = balance_volumes(balance_position(90, 100) - 0.25);
-        assert_eq!((a, b), (100, 85));
-    }
-
-    #[test]
-    fn the_smallest_step_still_moves_and_accumulates() {
-        let (mut a, mut b) = (100u8, 100u8);
-        for _ in 0..3 {
-            let next = balance_volumes(balance_position(a, b) + 0.01);
-            assert_ne!(next, (a, b));
-            (a, b) = next;
-        }
-        assert_eq!((a, b), (97, 100));
     }
 
     #[test]
@@ -413,7 +288,7 @@ mod tests {
         assert!(hotkeys.press(Action::ProfileNext));
         assert!(!hotkeys.press(Action::ProfileNext), "auto-repeat");
         assert!(
-            hotkeys.press(Action::BalanceA),
+            hotkeys.press(Action::ProfilePrev),
             "another key is independent"
         );
         hotkeys.release(Action::ProfileNext);

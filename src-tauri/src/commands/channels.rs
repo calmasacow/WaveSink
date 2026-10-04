@@ -47,7 +47,6 @@ pub fn add_channel(
             icon_color: def.icon_color,
             volume_percent: 100,
             muted: false,
-            stream_mix: def.stream_mix,
         });
         let names = crate::commands::buses::channel_names(&mixer);
         crate::commands::profiles::autosave_active(&mixer);

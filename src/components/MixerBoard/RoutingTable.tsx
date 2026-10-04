@@ -76,7 +76,6 @@ export function RoutingTable() {
         muted: bus.muted,
         output_bindings: [],
         order,
-        role: bus.role,
       })),
     [routing, buses],
   );

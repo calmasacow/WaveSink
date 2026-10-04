@@ -33,8 +33,6 @@ export interface VirtualSink {
   icon_color?: string | null;
   volume_percent: number;
   muted: boolean;
-  /** Whether this channel feeds the Stream Mix source (OBS recording). */
-  stream_mix: boolean;
 }
 
 export interface OutputDevice {
@@ -102,9 +100,6 @@ export interface SeenApp {
 }
 
 /** A user-defined mix (record bus). The label is what recorders display. */
-/** Where a mix appears to the rest of the system. */
-export type MixRole = "recording" | "playback";
-
 export interface BusDef {
   name: string;
   label: string;
@@ -118,8 +113,6 @@ export interface BusDef {
   volume_percent: number;
   /** Muted for recorders (they hear silence). Persisted with the mix. */
   muted: boolean;
-  /** Which device list the mix shows up in. Persisted. */
-  role: MixRole;
   /** Per-member send level within this mix (0-100%); a member absent here
    *  carries at 100%. Keyed by channel sink name or hardware input id. */
   member_gains: Record<string, number>;
@@ -168,7 +161,6 @@ export interface RoutingMix {
   muted: boolean;
   output_bindings: OutputBinding[];
   order: number;
-  role: MixRole;
 }
 export interface RouteCell {
   enabled: boolean;
@@ -180,14 +172,8 @@ export interface RoutingModel {
   inputs: RoutingInput[];
   mixes: RoutingMix[];
   routes: Record<string, Record<string, RouteCell>>;
-  monitor_mix: string | null;
-  hidden_devices: string[];
 }
 
-/** The channels a mix actually carries, given the full channel set. */
-export function busMembers(bus: BusDef, allChannels: string[]): string[] {
-  return bus.exclude ? allChannels.filter((c) => !bus.channels.includes(c)) : bus.channels;
-}
 
 /** Profile listing entry; trigger_device auto-loads the profile. */
 export interface ProfileInfo {

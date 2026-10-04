@@ -36,12 +36,7 @@ pub trait AudioBackend: Send + Sync {
 
     /// Create a mix bus: a capturable virtual source whose label is the
     /// device name recorders (OBS) display. Native-only.
-    fn create_bus(
-        &self,
-        name: &str,
-        label: &str,
-        role: crate::persistence::buses::MixRole,
-    ) -> Result<(), SinkError>;
+    fn create_bus(&self, name: &str, label: &str) -> Result<(), SinkError>;
 
     /// Destroy a mix bus (its links go with it).
     fn destroy_bus(&self, name: &str) -> Result<(), SinkError>;
@@ -69,13 +64,9 @@ pub trait AudioBackend: Send + Sync {
     ) -> Result<(), SinkError>;
     fn remove_hardware_input(&self, id: &str) -> Result<(), SinkError>;
 
-    /// Replace physical playback targets for a mix. Bindings are independent
-    /// from session-only monitoring and may contain more than one device.
+    /// Replace physical playback targets for a mix; may hold more than one
+    /// device, or the system default.
     fn set_mix_outputs(&self, name: &str, outputs: &[OutputBinding]) -> Result<(), SinkError>;
-
-    /// Monitor a channel/mix/mic on the system default output (session
-    /// scoped, an extra passive link set). Native-only.
-    fn set_monitor(&self, name: &str, enabled: bool) -> Result<(), SinkError>;
 
     /// Hardware capture devices (microphones) for the mic chain.
     fn list_input_devices(&self) -> Result<Vec<OutputDevice>, SinkError>;

@@ -4,7 +4,6 @@ import type {
   AppStream,
   BusDef,
   EqConfig,
-  MixRole,
   OutputDevice,
   ProfileInfo,
   SeenApp,
@@ -41,7 +40,6 @@ interface MixerStore {
   routing: RoutingModel | null;
   fetchRouting: () => Promise<void>;
   setRouteCell: (inputId: string, mixId: string, cell: RouteCell) => Promise<void>;
-  setMixMonitor: (mixId: string | null) => Promise<void>;
   setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
   setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
   setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
@@ -112,20 +110,10 @@ interface MixerStore {
   setBusMembers: (name: string, channels: string[]) => Promise<void>;
   /** Manual vs auto-include mode (carried set preserved). */
   setBusExclude: (name: string, exclude: boolean) => Promise<void>;
-  /** Which device list the mix shows up in. */
-  setBusRole: (name: string, role: MixRole) => Promise<void>;
   /** A mix's playback level for recorders (0-100%); persisted. */
   setBusVolume: (name: string, volume: number) => Promise<void>;
   /** Mute a mix for recorders; persisted. */
   setBusMute: (name: string, muted: boolean) => Promise<void>;
-  /** One member's send level within one mix (0-100%; 100 = no override);
-   *  persisted, independent of the member's own volume. */
-  setBusMemberGain: (bus: string, member: string, percent: number) => Promise<void>;
-  /** Open (or focus) the popout window with one mix's send levels. */
-  openMixFaderWindow: (bus: string) => Promise<void>;
-  /** Session-scoped "listen on default output" toggles per node. */
-  monitors: Record<string, boolean>;
-  toggleMonitor: (name: string) => Promise<void>;
   /** Name of the most recently saved/loaded profile this session. */
   activeProfile: string | null;
   /** Error surfaced to the UI (e.g. a command the backend rejected). */
@@ -191,15 +179,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         sendPercent: cell.send_percent,
         muted: cell.muted,
       });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchRouting();
-    }
-  },
-  setMixMonitor: async (mixId) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, monitor_mix: mixId } : null }));
-    try {
-      await invoke(mixId ? "set_mix_monitor" : "clear_mix_monitor", mixId ? { mixId } : {});
     } catch (e) {
       set({ error: String(e) });
       await get().fetchRouting();
@@ -737,18 +716,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }
   },
 
-  setBusRole: async (name, role) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, role } : b)),
-    }));
-    try {
-      await invoke("set_bus_role", { name, role });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
-  },
-
   setBusVolume: async (name, volume) => {
     set((s) => ({
       buses: s.buses.map((b) => (b.name === name ? { ...b, volume_percent: volume } : b)),
@@ -757,31 +724,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       void get().fetchBuses();
     });
-  },
-
-  setBusMemberGain: async (bus, member, percent) => {
-    set((s) => ({
-      buses: s.buses.map((b) =>
-        b.name === bus ? { ...b, member_gains: { ...b.member_gains, [member]: percent } } : b,
-      ),
-    }));
-    debouncedInvoke(
-      `busgain:${bus}:${member}`,
-      "set_bus_member_gain",
-      { bus, member, percent },
-      (e) => {
-        set({ error: String(e) });
-        void get().fetchBuses();
-      },
-    );
-  },
-
-  openMixFaderWindow: async (bus) => {
-    try {
-      await invoke("open_mix_fader_window", { bus });
-    } catch (e) {
-      set({ error: String(e) });
-    }
   },
 
   setBusMute: async (name, muted) => {
@@ -795,19 +737,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       await get().fetchBuses();
       await get().fetchRouting();
-    }
-  },
-
-  monitors: {},
-
-  toggleMonitor: async (name) => {
-    const enabled = !get().monitors[name];
-    set((s) => ({ monitors: { ...s.monitors, [name]: enabled } }));
-    try {
-      await invoke("set_monitor", { sinkName: name, enabled });
-    } catch (e) {
-      set({ error: String(e) });
-      set((s) => ({ monitors: { ...s.monitors, [name]: !enabled } }));
     }
   },
 

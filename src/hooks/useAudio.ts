@@ -80,15 +80,6 @@ export function useAudio() {
     };
   }, [onProfileChanged]);
 
-  // A hotkey moved the balance in the backend; the strips need the volumes.
-  const fetchChannels = useMixerStore((s) => s.fetchChannels);
-  useEffect(() => {
-    const unlisten = listen("channels-changed", () => void fetchChannels());
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [fetchChannels]);
-
   // The Omarchy audio panel set a mix level through the CLI.
   const fetchBuses = useMixerStore((s) => s.fetchBuses);
   useEffect(() => {
