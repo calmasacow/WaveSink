@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent } from "react";
+import type { PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMixerStore } from "../../store/mixer";
-import { FX_DEFAULTS, MAX_VOLUME, type FxChain, type RouteCell } from "../../types";
+import { gainDb, peakOf, sendGain, useMeter, useMeterConfig } from "../../lib/meters";
+import {
+  FX_DEFAULTS,
+  MAX_VOLUME,
+  SYSTEM_DEFAULT_OUTPUT,
+  type FxChain,
+  type RouteCell,
+} from "../../types";
 import { Ms } from "../Icons";
 import { Modal } from "../Modal";
 import { channelIconId, CHANNEL_COLORS, CHANNEL_ICON_IDS, ChannelIcon } from "../ChannelIcon";
 import { EqModal } from "../Eq/EqModal";
-import { DspSlider } from "../Mic/DspSlider";
+import { DspSlider } from "../DspSlider";
 import { ToggleRow } from "../Toggle";
 
 const blankCell: RouteCell = { enabled: false, send_percent: 100, muted: false };
@@ -15,21 +22,18 @@ const blankCell: RouteCell = { enabled: false, send_percent: 100, muted: false }
 export function RoutingTable() {
   const routing = useMixerStore((s) => s.routing);
   const channels = useMixerStore((s) => s.channels);
-  const buses = useMixerStore((s) => s.buses);
   const outputs = useMixerStore((s) => s.outputDevices);
-  const levels = useMixerStore((s) => s.levels);
   const inputDevices = useMixerStore((s) => s.inputDevices);
-  const micConfig = useMixerStore((s) => s.micConfig);
   const setRouteCell = useMixerStore((s) => s.setRouteCell);
   const setInputFx = useMixerStore((s) => s.setInputFx);
   const setChannelVolume = useMixerStore((s) => s.setChannelVolume);
   const renameChannel = useMixerStore((s) => s.renameChannel);
   const setChannelIcon = useMixerStore((s) => s.setChannelIcon);
   const setChannelIconColor = useMixerStore((s) => s.setChannelIconColor);
-  const setMicConfig = useMixerStore((s) => s.setMicConfig);
   const toggleMute = useMixerStore((s) => s.toggleMute);
   const setMixOutputs = useMixerStore((s) => s.setMixOutputs);
   const setBusMute = useMixerStore((s) => s.setBusMute);
+  const setBusVolume = useMixerStore((s) => s.setBusVolume);
   const renameBus = useMixerStore((s) => s.renameBus);
   const setBusIcon = useMixerStore((s) => s.setBusIcon);
   const setBusIconColor = useMixerStore((s) => s.setBusIconColor);
@@ -41,7 +45,8 @@ export function RoutingTable() {
   const removeHardwareInput = useMixerStore((s) => s.removeHardwareInput);
   const removeChannel = useMixerStore((s) => s.removeChannel);
   const setInputLevel = useMixerStore((s) => s.setInputLevel);
-  const fetchMic = useMixerStore((s) => s.fetchMic);
+  const toggleSolo = useMixerStore((s) => s.toggleSolo);
+  const fetchInputDevices = useMixerStore((s) => s.fetchInputDevices);
   const [adding, setAdding] = useState<"input" | "mix" | null>(null);
   const [inputKind, setInputKind] = useState<"software" | "hardware">("software");
   const [label, setLabel] = useState("");
@@ -59,22 +64,7 @@ export function RoutingTable() {
   const [reordering, setReordering] = useState<{ kind: "input" | "mix"; id: string } | null>(null);
   const hold = useRef<number | null>(null);
 
-  const mixes = useMemo(
-    () =>
-      routing?.mixes ??
-      buses.map((bus, order) => ({
-        id: bus.name,
-        label: bus.label,
-        icon: "broadcast",
-        icon_color: bus.icon_color ?? "purple",
-        volume_percent: bus.volume_percent,
-        muted: bus.muted,
-        output_bindings: [],
-        order,
-        role: bus.role,
-      })),
-    [routing, buses],
-  );
+  const mixes = useMemo(() => routing?.mixes ?? [], [routing]);
   const inputs = useMemo(
     () =>
       routing?.inputs ??
@@ -159,7 +149,7 @@ export function RoutingTable() {
 
   const openAdd = () => {
     setCreateError("");
-    void fetchMic();
+    void fetchInputDevices();
     setAdding("input");
   };
   const closeAdd = () => {
@@ -206,11 +196,13 @@ export function RoutingTable() {
             <MixHeader
               key={mix.id}
               mix={mix}
+              volume={mix.volume_percent}
               outputs={outputs}
               reordering={reordering?.kind === "mix" && reordering.id === mix.id}
               onHold={(event) => beginHold("mix", mix.id, event)}
               onEnter={() => moveReorder("mix", mix.id)}
               onMute={() => void setBusMute(mix.id, !mix.muted)}
+              onVolume={(volume) => void setBusVolume(mix.id, volume)}
               onEdit={() => setEditingMix(mix.id)}
             />
           ))}
@@ -226,17 +218,17 @@ export function RoutingTable() {
 
           {orderedInputs.map((input) => {
             const channel = channels.find((entry) => entry.name === input.id);
-            const volume =
-              input.id === "sink_mic"
-                ? (micConfig?.gain_percent ?? input.volume_percent)
-                : (channel?.volume_percent ?? input.volume_percent);
-            const muted =
-              input.id === "sink_mic"
-                ? (micConfig?.muted ?? input.muted)
-                : (channel?.muted ?? input.muted);
-            const level = levels[input.id];
-            const meter = Math.min(100, Math.max(level?.[0] ?? 0, level?.[1] ?? 0) * 100);
+            const volume = channel?.volume_percent ?? input.volume_percent;
+            const muted = channel?.muted ?? input.muted;
             const hardware = input.kind === "hardware";
+            // Channels meter on their own sink. A hardware input meters what its
+            // mixes receive: the processed stream while Audio FX is on.
+            const meterKey = !hardware
+              ? input.id
+              : fxActive(input.fx)
+                ? `fx:${input.id}`
+                : input.source_name;
+            const inputLevel = () => (muted ? 0 : peakOf(meterKey));
             return (
               <div className="wave-row" key={input.id}>
                 <div
@@ -253,51 +245,46 @@ export function RoutingTable() {
                 >
                   <button
                     type="button"
-                    className="wave-input-icon"
+                    className={
+                      "wave-input-icon" + (routing?.solo?.input === input.id ? " soloed" : "")
+                    }
+                    onClick={() => setEditingInput(input.id)}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setEditingInput(input.id);
+                      void toggleSolo(input.id);
                     }}
-                    title="Right-click to edit input"
+                    title={
+                      routing?.solo?.input === input.id
+                        ? "Edit input · right-click to un-solo"
+                        : "Edit input · right-click to solo"
+                    }
                   >
                     <ChannelIcon id={input.icon} color={input.icon_color} />
                   </button>
                   <div className="wave-input-copy">
                     <strong>{input.label}</strong>
-                    <div className="wave-meter">
-                      <i style={{ width: `${meter}%` }} />
-                    </div>
                   </div>
                   <button
                     type="button"
                     className="wave-mute"
                     onClick={() =>
-                      input.id === "sink_mic"
-                        ? void setMicConfig({ muted: !muted })
-                        : hardware
-                          ? void setInputLevel(input.id, volume, !muted)
-                          : void toggleMute(input.id, !muted)
+                      hardware
+                        ? void setInputLevel(input.id, volume, !muted)
+                        : void toggleMute(input.id, !muted)
                     }
                     aria-label={muted ? `Unmute ${input.label}` : `Mute ${input.label}`}
                   >
                     <Ms name={muted ? "volume_off" : "volume_up"} />
                   </button>
                   <div className="wave-source-slider">
-                    <input
-                      aria-label={`${input.label} source volume`}
-                      type="range"
-                      min="0"
-                      max={MAX_VOLUME}
+                    <MeterSlider
+                      label={`${input.label} source volume`}
                       value={volume}
-                      style={
-                        { "--slider-value": `${(volume / MAX_VOLUME) * 100}%` } as CSSProperties
-                      }
-                      onChange={(event) =>
-                        input.id === "sink_mic"
-                          ? void setMicConfig({ gain_percent: Number(event.target.value) })
-                          : hardware
-                            ? void setInputLevel(input.id, Number(event.target.value), muted)
-                            : void setChannelVolume(input.id, Number(event.target.value))
+                      level={inputLevel}
+                      onChange={(value) =>
+                        hardware
+                          ? void setInputLevel(input.id, value, muted)
+                          : void setChannelVolume(input.id, value)
                       }
                     />
                   </div>
@@ -314,6 +301,7 @@ export function RoutingTable() {
                   <SendCell
                     key={`${input.id}:${mix.id}`}
                     cell={cellFor(input.id, mix.id)}
+                    inputLevel={inputLevel}
                     unavailable={false}
                     onChange={(next) => void setRouteCell(input.id, mix.id, next)}
                   />
@@ -354,7 +342,7 @@ export function RoutingTable() {
               className={inputKind === "hardware" ? "active" : ""}
               onClick={() => {
                 setInputKind("hardware");
-                void fetchMic();
+                void fetchInputDevices();
               }}
             >
               Hardware source
@@ -462,7 +450,7 @@ export function RoutingTable() {
         <InputEditModal
           input={editedInput}
           devices={inputDevices}
-          onRefreshDevices={fetchMic}
+          onRefreshDevices={fetchInputDevices}
           onClose={() => setEditingInput(null)}
           onHardwareSave={updateHardwareInput}
           onRemoveHardware={removeHardwareInput}
@@ -496,29 +484,38 @@ export function RoutingTable() {
 
 function MixHeader({
   mix,
+  volume,
   outputs,
   reordering,
   onHold,
   onEnter,
   onMute,
+  onVolume,
   onEdit,
 }: Readonly<{
   mix: {
+    id: string;
     label: string;
     icon: string | null;
     icon_color: string | null;
     muted: boolean;
     output_bindings: { device: string; enabled: boolean }[];
   };
+  volume: number;
   outputs: { name: string; description: string }[];
   reordering: boolean;
   onHold: (event: PointerEvent<HTMLDivElement>) => void;
   onEnter: () => void;
   onMute: () => void;
+  onVolume: (volume: number) => void;
   onEdit: () => void;
 }>) {
+  const { pro } = useMeterConfig();
   const count = mix.output_bindings.filter(
-    (binding) => binding.enabled && outputs.some((output) => output.name === binding.device),
+    (binding) =>
+      binding.enabled &&
+      (binding.device === SYSTEM_DEFAULT_OUTPUT ||
+        outputs.some((output) => output.name === binding.device)),
   ).length;
   const color = mix.muted ? "gray" : (mix.icon_color ?? "purple");
   return (
@@ -549,6 +546,21 @@ function MixHeader({
       >
         <Ms name={mix.muted ? "volume_off" : "volume_up"} />
       </button>
+      {/* The mix's one volume control: recorders and every output this mix
+          plays to hear it. Pointer events stay here so dragging never starts
+          the header's hold-to-reorder. */}
+      <div
+        className="wave-source-slider wave-mix-level"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <MeterSlider
+          label={`${mix.label} mix volume`}
+          value={volume}
+          level={() => (mix.muted ? 0 : peakOf(mix.id))}
+          onChange={onVolume}
+        />
+        <span>{pro ? gainDb(volume) : `${volume}%`}</span>
+      </div>
     </div>
   );
 }
@@ -634,22 +646,26 @@ function EditMixModal({
       </div>
       <div className="modal-label">Outputs</div>
       <div className="edit-mix-outputs">
-        {outputs.map((output) => (
-          <label key={output.name}>
-            <input
-              type="checkbox"
-              checked={selected.includes(output.name)}
-              onChange={(event) =>
-                onOutputs(
-                  event.target.checked
-                    ? [...selected, output.name]
-                    : selected.filter((name) => name !== output.name),
-                )
-              }
-            />{" "}
-            {output.description}
-          </label>
-        ))}
+        {/* Channels reach speakers only through mixes; "System default" follows
+            whatever the desktop's default output is, e.g. headphones when plugged in. */}
+        {[{ name: SYSTEM_DEFAULT_OUTPUT, description: "System default" }, ...outputs].map(
+          (output) => (
+            <label key={output.name}>
+              <input
+                type="checkbox"
+                checked={selected.includes(output.name)}
+                onChange={(event) =>
+                  onOutputs(
+                    event.target.checked
+                      ? [...selected, output.name]
+                      : selected.filter((name) => name !== output.name),
+                  )
+                }
+              />{" "}
+              {output.description}
+            </label>
+          ),
+        )}
       </div>
       <div className="modal-btns">
         <button type="button" className="modal-btn danger" onClick={onDelete}>
@@ -940,9 +956,16 @@ function AudioFxModal({
 
 function SendCell({
   cell,
+  inputLevel,
   unavailable,
   onChange,
-}: Readonly<{ cell: RouteCell; unavailable: boolean; onChange: (cell: RouteCell) => void }>) {
+}: Readonly<{
+  cell: RouteCell;
+  /** The input's live level; the cell shows it after its own send gain. */
+  inputLevel: () => number;
+  unavailable: boolean;
+  onChange: (cell: RouteCell) => void;
+}>) {
   if (unavailable)
     return (
       <div className="wave-send unavailable">
@@ -961,15 +984,14 @@ function SendCell({
         <Ms name={cell.enabled ? "check" : "add"} />
       </button>
       <div>
-        <input
-          aria-label="Mix send level"
-          type="range"
-          min="0"
-          max="150"
+        <MeterSlider
+          label="Mix send level"
           value={cell.send_percent}
-          style={{ "--slider-value": `${(cell.send_percent / 150) * 100}%` } as CSSProperties}
+          level={() =>
+            cell.enabled && !cell.muted ? inputLevel() * sendGain(cell.send_percent) : 0
+          }
           disabled={!cell.enabled}
-          onChange={(event) => onChange({ ...cell, send_percent: Number(event.target.value) })}
+          onChange={(send_percent) => onChange({ ...cell, send_percent })}
         />
       </div>
       <button
@@ -983,4 +1005,45 @@ function SendCell({
       </button>
     </div>
   );
+}
+
+/** A level slider with its live meter drawn inside the track (`--meter`).
+ * In Pro mode, hovering shows the held peak in dBFS. */
+function MeterSlider({
+  label,
+  value,
+  level,
+  disabled,
+  onChange,
+}: Readonly<{
+  label: string;
+  value: number;
+  /** Linear peak amplitude to show, read every animation frame. */
+  level: () => number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}>) {
+  const readout = useRef<HTMLDivElement>(null);
+  const ref = useMeter<HTMLInputElement>(level, readout);
+  return (
+    <div className="meter-wrap">
+      <input
+        ref={ref}
+        className="meter-slider"
+        aria-label={label}
+        type="range"
+        min="0"
+        max={MAX_VOLUME}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      <div className="meter-readout" ref={readout} aria-hidden="true" />
+    </div>
+  );
+}
+
+/** Whether any Audio FX stage is on (mirrors FxChain::is_active). */
+function fxActive(fx: FxChain): boolean {
+  return fx.gate_enabled || fx.compressor_enabled || fx.limiter_enabled;
 }

@@ -40,6 +40,9 @@ pub trait DesktopDb {
     fn name_by_id(&self, id: &str) -> Option<String>;
     /// `(id, name)` of an entry among `ids` whose Exec runs `exe`.
     fn entry_for_exec(&self, ids: &[String], exe: &str) -> Option<(String, String)>;
+    /// `(id, name)` of the one desktop id whose Exec runs `exe`; None when no
+    /// entry or several different ones do (launcher shortcuts sharing an exe).
+    fn entry_by_exec(&self, exe: &str) -> Option<(String, String)>;
 }
 
 pub trait SteamDb {
@@ -159,6 +162,16 @@ pub fn resolve(
                 return identity(PROP_DESKTOP, &id, name, Some(pid));
             }
         }
+        // Started from a terminal or autostart, the process names no desktop
+        // entry; if exactly one runs this program, it's still that app. Without
+        // this, how an app was launched decided its identity, and one app
+        // collected several history rows and assignments.
+        if let Some((id, name)) = exe
+            .as_deref()
+            .and_then(|exe| desktop_for_exe(desktops, exe))
+        {
+            return identity(PROP_DESKTOP, &id, name, Some(pid));
+        }
         if let Some(exe) = exe {
             if !types::is_wrapper_exe(&exe) && !windows_binary(props) {
                 return identity(PROP_EXE, &exe, types::prettify(&exe), Some(pid));
@@ -167,6 +180,15 @@ pub fn resolve(
     }
 
     identity(&fallback_prop, &fallback_value, fallback_display, pid)
+}
+
+/// The desktop identity a plain executable resolves to, if any: the one
+/// desktop entry running it. Wrappers (interpreters, launchers) never do.
+pub fn desktop_for_exe(desktops: &dyn DesktopDb, exe: &str) -> Option<(String, String)> {
+    if types::is_wrapper_exe(exe) {
+        return None;
+    }
+    desktops.entry_by_exec(exe)
 }
 
 /// The stream's own properties a legacy rule may have been keyed on.
@@ -269,6 +291,13 @@ mod tests {
                 .iter()
                 .find(|d| ids.iter().any(|i| i == d.0) && d.2 == exe)
                 .map(|d| (d.0.to_string(), d.1.to_string()))
+        }
+        fn entry_by_exec(&self, exe: &str) -> Option<(String, String)> {
+            let hits: Vec<_> = self.0.iter().filter(|d| d.2 == exe).collect();
+            let first = hits.first()?;
+            hits.iter()
+                .all(|d| d.0 == first.0)
+                .then(|| (first.0.to_string(), first.1.to_string()))
         }
     }
 
@@ -537,9 +566,14 @@ mod tests {
 
         // Only the terminal's scope is visible: its entry runs wezterm, not
         // firefox, so it must be rejected rather than mislabel the app.
+        // Firefox is still found by its own entry: the same identity it gets
+        // from a launcher.
         proc.ids.insert(5, vec!["wezterm"]);
         let id = resolve(&p, &proc, &desktops, &FakeSteam);
-        assert_eq!((id.prop.as_str(), id.value.as_str()), (PROP_EXE, "firefox"));
+        assert_eq!(
+            (id.prop.as_str(), id.value.as_str()),
+            (PROP_DESKTOP, "firefox")
+        );
     }
 
     #[test]
@@ -647,5 +681,38 @@ mod tests {
         adopt_from_siblings(&mut ids, &[&spotify, &chrome]);
         assert_eq!(ids[1].prop, "application.name");
         assert_eq!(ids[1].value, "Chromium");
+    }
+
+    #[test]
+    fn an_app_started_without_a_desktop_id_still_gets_its_desktop_identity() {
+        // OBS from a terminal: no launcher scope, but one desktop entry runs it.
+        let p = props(&[
+            ("application.process.id", "42"),
+            ("pipewire.sec.pid", "42"),
+            ("application.name", "OBS"),
+        ]);
+        let mut proc = FakeProc::new();
+        proc.exe.insert(42, "obs");
+        let desktops = FakeDesktops(vec![
+            ("com.obsproject.studio", "OBS Studio", "obs"),
+            // A user override shares the id: still one app.
+            ("com.obsproject.studio", "OBS Studio", "obs"),
+        ]);
+        let id = resolve(&p, &proc, &desktops, &FakeSteam);
+        assert_eq!(
+            (id.prop.as_str(), id.value.as_str()),
+            (PROP_DESKTOP, "com.obsproject.studio")
+        );
+        assert_eq!(id.display, "OBS Studio");
+    }
+
+    #[test]
+    fn an_exe_shared_by_several_desktop_entries_stays_an_exe() {
+        let p = props(&[("application.process.id", "42"), ("pipewire.sec.pid", "42")]);
+        let mut proc = FakeProc::new();
+        proc.exe.insert(42, "mpv");
+        let desktops = FakeDesktops(vec![("mpv", "mpv", "mpv"), ("umpv", "umpv", "mpv")]);
+        let id = resolve(&p, &proc, &desktops, &FakeSteam);
+        assert_eq!((id.prop.as_str(), id.value.as_str()), (PROP_EXE, "mpv"));
     }
 }

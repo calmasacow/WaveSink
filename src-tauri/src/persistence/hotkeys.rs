@@ -1,4 +1,4 @@
-//! Hotkey settings: the balance step, and key bindings for the X11 fallback.
+//! Hotkey settings: key bindings for the X11 fallback.
 //! Under the desktop portal the bindings live with the desktop, not here.
 
 use std::collections::BTreeMap;
@@ -8,29 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-/// Balance moves per press, in percentage points; the UI offers these.
-pub const BALANCE_STEPS: [u8; 4] = [1, 10, 15, 25];
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HotkeyConfig {
-    #[serde(default = "default_step")]
-    pub balance_step: u8,
     /// Action id -> accelerator, X11 only.
     #[serde(default)]
     pub bindings: BTreeMap<String, String>,
-}
-
-fn default_step() -> u8 {
-    10
-}
-
-impl Default for HotkeyConfig {
-    fn default() -> Self {
-        Self {
-            balance_step: default_step(),
-            bindings: BTreeMap::new(),
-        }
-    }
 }
 
 impl HotkeyConfig {
@@ -39,15 +21,11 @@ impl HotkeyConfig {
     }
 
     pub fn load() -> Self {
-        let mut config: Self = Self::config_path()
+        Self::config_path()
             .ok()
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        if !BALANCE_STEPS.contains(&config.balance_step) {
-            config.balance_step = default_step();
-        }
-        config
+            .unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<(), SinkError> {

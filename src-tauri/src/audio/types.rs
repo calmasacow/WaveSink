@@ -317,10 +317,6 @@ pub struct AppStream {
     pub settled: bool,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 /// One of the user-defined virtual channels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VirtualSink {
@@ -335,9 +331,6 @@ pub struct VirtualSink {
     pub icon_color: Option<String>,
     pub volume_percent: u8,
     pub muted: bool,
-    /// Whether this channel feeds the Stream Mix source (what OBS records).
-    #[serde(default = "default_true")]
-    pub stream_mix: bool,
 }
 
 /// A physical audio output device.
@@ -348,156 +341,13 @@ pub struct OutputDevice {
     pub description: String,
 }
 
-fn default_mic_label() -> String {
-    "WaveSink Mic".to_string()
-}
-fn default_gate_threshold() -> f32 {
-    -40.0
-}
-fn default_comp_threshold() -> f32 {
-    -18.0
-}
-fn default_comp_ratio() -> f32 {
-    3.0
-}
-fn default_limiter_ceiling() -> f32 {
-    -1.0
-}
-
-/// Mic chain configuration, persisted and applied live.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MicConfig {
-    pub enabled: bool,
-    /// node.name of the hardware mic to capture (None = system default).
-    pub input_device: Option<String>,
-    /// What other apps list the processed mic as (node description).
-    #[serde(default = "default_mic_label")]
-    pub output_label: String,
-    /// 0-200; 100 = unity.
-    pub gain_percent: u8,
-    pub gate_enabled: bool,
-    pub comp_enabled: bool,
-    pub limiter_enabled: bool,
-    pub muted: bool,
-    /// Gate opens above this level (dBFS).
-    #[serde(default = "default_gate_threshold")]
-    pub gate_threshold_db: f32,
-    /// Compression starts above this level (dBFS).
-    #[serde(default = "default_comp_threshold")]
-    pub comp_threshold_db: f32,
-    /// Compression ratio (N:1).
-    #[serde(default = "default_comp_ratio")]
-    pub comp_ratio: f32,
-    /// Hard ceiling (dBFS).
-    #[serde(default = "default_limiter_ceiling")]
-    pub limiter_ceiling_db: f32,
-}
-
 /// A config value clamped to its range, or the default when it is not a
-/// number at all - the shape both clamp_ranges share.
+/// number at all.
 fn finite(v: f32, fallback: f32, lo: f32, hi: f32) -> f32 {
     if v.is_finite() {
         v.clamp(lo, hi)
     } else {
         fallback
-    }
-}
-
-impl MicConfig {
-    /// Clamp numeric fields to DSP-safe ranges and replace non-finite values,
-    /// so a malformed or hostile IPC payload can't push the chain out of range.
-    pub fn clamp_ranges(&mut self) {
-        self.gain_percent = self.gain_percent.min(200);
-        self.gate_threshold_db = finite(
-            self.gate_threshold_db,
-            default_gate_threshold(),
-            -100.0,
-            0.0,
-        );
-        self.comp_threshold_db = finite(
-            self.comp_threshold_db,
-            default_comp_threshold(),
-            -100.0,
-            0.0,
-        );
-        self.comp_ratio = finite(self.comp_ratio, default_comp_ratio(), 1.0, 20.0);
-        self.limiter_ceiling_db = finite(
-            self.limiter_ceiling_db,
-            default_limiter_ceiling(),
-            -60.0,
-            0.0,
-        );
-    }
-}
-
-impl Default for MicConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            input_device: None,
-            output_label: default_mic_label(),
-            gain_percent: 100,
-            gate_enabled: true,
-            comp_enabled: true,
-            limiter_enabled: true,
-            muted: false,
-            gate_threshold_db: default_gate_threshold(),
-            comp_threshold_db: default_comp_threshold(),
-            comp_ratio: default_comp_ratio(),
-            limiter_ceiling_db: default_limiter_ceiling(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod mic_clamp_tests {
-    use super::*;
-
-    #[test]
-    fn clamp_ranges_bounds_out_of_range_values() {
-        let mut c = MicConfig {
-            gain_percent: 255,
-            gate_threshold_db: 40.0,
-            comp_threshold_db: -400.0,
-            comp_ratio: 1000.0,
-            limiter_ceiling_db: 12.0,
-            ..MicConfig::default()
-        };
-        c.clamp_ranges();
-        assert_eq!(c.gain_percent, 200);
-        assert_eq!(c.gate_threshold_db, 0.0);
-        assert_eq!(c.comp_threshold_db, -100.0);
-        assert_eq!(c.comp_ratio, 20.0);
-        assert_eq!(c.limiter_ceiling_db, 0.0);
-    }
-
-    #[test]
-    fn clamp_ranges_replaces_non_finite_with_defaults() {
-        let mut c = MicConfig {
-            gate_threshold_db: f32::NAN,
-            comp_threshold_db: f32::INFINITY,
-            comp_ratio: f32::NEG_INFINITY,
-            ..MicConfig::default()
-        };
-        c.clamp_ranges();
-        assert_eq!(c.gate_threshold_db, default_gate_threshold());
-        assert_eq!(c.comp_threshold_db, default_comp_threshold());
-        assert_eq!(c.comp_ratio, default_comp_ratio());
-    }
-
-    #[test]
-    fn clamp_ranges_leaves_valid_values_untouched() {
-        let mut c = MicConfig {
-            gain_percent: 120,
-            gate_threshold_db: -45.0,
-            comp_threshold_db: -18.0,
-            comp_ratio: 4.0,
-            limiter_ceiling_db: -1.0,
-            ..MicConfig::default()
-        };
-        let before = c.clone();
-        c.clamp_ranges();
-        assert_eq!(c, before);
     }
 }
 

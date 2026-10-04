@@ -35,34 +35,17 @@ pub struct BusDef {
     /// music"). False = the mix carries exactly `channels` (manual selection).
     #[serde(default)]
     pub exclude: bool,
-    /// Playback level recorders hear (0-150%). Persisted so a mix keeps its
+    /// Playback level recorders hear (0-100%). Persisted so a mix keeps its
     /// level across UI remounts, profile switches, and restarts.
     #[serde(default = "default_volume")]
     pub volume_percent: u8,
     /// Muted for recorders (they hear silence). Persisted like the volume.
     #[serde(default)]
     pub muted: bool,
-    /// The processed virtual mic feeds this mix alongside its channels.
-    #[serde(default)]
-    pub mic: bool,
-    /// Per-member send level (0-150%; absent = 100%), independent of the
-    /// member's own volume. Keyed by sink name, or "sink_mic".
+    /// Per-member send level (0-100%; absent = 100%), independent of the
+    /// member's own volume. Keyed by sink name or hardware input id.
     #[serde(default)]
     pub member_gains: HashMap<String, u8>,
-    /// Legacy setting. Mixes are always recording/capture devices.
-    #[serde(default)]
-    pub role: MixRole,
-}
-
-/// Where a mix appears to the rest of the system.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MixRole {
-    /// A recording device, where a recorder looks first.
-    #[default]
-    Recording,
-    /// A playback device, captured through its monitor.
-    Playback,
 }
 
 fn default_volume() -> u8 {
@@ -102,28 +85,9 @@ impl Default for Buses {
                 exclude: true,
                 volume_percent: 100,
                 muted: false,
-                mic: false,
                 member_gains: HashMap::new(),
-                role: MixRole::Recording,
             }],
         }
-    }
-}
-
-fn slugify(label: &str) -> String {
-    let slug: String = label
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect::<String>()
-        .split('_')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("_");
-    if slug.is_empty() {
-        "mix".to_string()
-    } else {
-        slug
     }
 }
 
@@ -162,202 +126,16 @@ impl Buses {
 
     /// A hand-edited buses.json degrades to the documented ranges instead
     /// of riding through to the UI (the `EqConfig::clamp_ranges` rule).
-    fn clamp_loaded(&mut self) {
+    pub(crate) fn clamp_loaded(&mut self) {
         for bus in &mut self.buses {
-            bus.role = MixRole::Recording;
             if bus.icon_color.is_none() {
                 bus.icon_color = Some("purple".into());
             }
-            bus.volume_percent = bus.volume_percent.min(150);
+            bus.volume_percent = bus.volume_percent.min(crate::commands::routing::MAX_VOLUME);
             bus.member_gains.retain(|_, percent| {
-                *percent = (*percent).min(150);
+                *percent = (*percent).min(crate::commands::routing::MAX_VOLUME);
                 *percent != 100
             });
-        }
-    }
-
-    pub fn save(&self) -> Result<(), SinkError> {
-        let path = Self::config_path()?;
-        if let Some(parent) = path.parent() {
-            crate::persistence::ensure_private_dir(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| SinkError::Config(format!("serialize buses: {e}")))?;
-        super::write_atomic(&path, &json)?;
-        Ok(())
-    }
-
-    pub fn get(&self, name: &str) -> Option<&BusDef> {
-        self.buses.iter().find(|b| b.name == name)
-    }
-
-    fn get_mut(&mut self, name: &str) -> Result<&mut BusDef, SinkError> {
-        self.buses
-            .iter_mut()
-            .find(|b| b.name == name)
-            .ok_or_else(|| SinkError::UnknownSink(name.to_string()))
-    }
-
-    /// Switch a mix between manual and auto-include mode, preserving its
-    /// current effective membership (the stored list flips meaning).
-    pub fn set_exclude(
-        &mut self,
-        name: &str,
-        exclude: bool,
-        all_channels: &[String],
-    ) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        if def.exclude == exclude {
-            return Ok(());
-        }
-        // Preserve what the mix carries: exclude mode stores the
-        // complement, manual mode stores the carried set itself.
-        let effective = def.effective_members(all_channels);
-        def.channels = if exclude {
-            all_channels
-                .iter()
-                .filter(|c| !effective.contains(c))
-                .cloned()
-                .collect()
-        } else {
-            effective
-        };
-        def.exclude = exclude;
-        Ok(())
-    }
-
-    pub fn add(&mut self, label: &str) -> Result<BusDef, SinkError> {
-        let label = label.trim();
-        if label.is_empty() || label.len() > 24 {
-            return Err(SinkError::Config(
-                "mix label must be 1-24 characters".into(),
-            ));
-        }
-        if self.buses.len() >= MAX_BUSES {
-            return Err(SinkError::Config(format!(
-                "at most {MAX_BUSES} mixes are supported"
-            )));
-        }
-        let base = format!("{BUS_PREFIX}{}", slugify(label));
-        let mut name = base.clone();
-        let mut counter = 2;
-        while self.get(&name).is_some() {
-            name = format!("{base}_{counter}");
-            counter += 1;
-        }
-        // New mixes start in auto-include mode carrying everything - uncheck
-        // what you don't want and future channels keep joining automatically.
-        let def = BusDef {
-            name,
-            label: label.to_string(),
-            icon: Some("broadcast".into()),
-            icon_color: Some("purple".into()),
-            channels: Vec::new(),
-            exclude: true,
-            volume_percent: 100,
-            muted: false,
-            mic: false,
-            member_gains: HashMap::new(),
-            role: MixRole::Recording,
-        };
-        self.buses.push(def.clone());
-        Ok(def)
-    }
-
-    pub fn rename(&mut self, name: &str, label: &str) -> Result<(), SinkError> {
-        let label = label.trim();
-        if label.is_empty() || label.len() > 24 {
-            return Err(SinkError::Config(
-                "mix label must be 1-24 characters".into(),
-            ));
-        }
-        let def = self.get_mut(name)?;
-        def.label = label.to_string();
-        Ok(())
-    }
-
-    pub fn set_icon(&mut self, name: &str, icon: String) -> Result<(), SinkError> {
-        self.get_mut(name)?.icon = Some(icon);
-        Ok(())
-    }
-
-    pub fn set_icon_color(&mut self, name: &str, icon_color: String) -> Result<(), SinkError> {
-        self.get_mut(name)?.icon_color = Some(icon_color);
-        Ok(())
-    }
-
-    /// Whether `remove` would succeed, so callers can reject a bad name
-    /// before tearing the node down.
-    pub fn removable(&self, name: &str) -> Result<(), SinkError> {
-        if self.get(name).is_none() {
-            return Err(SinkError::UnknownSink(name.to_string()));
-        }
-        Ok(())
-    }
-
-    pub fn remove(&mut self, name: &str) -> Result<(), SinkError> {
-        self.removable(name)?;
-        self.buses.retain(|b| b.name != name);
-        Ok(())
-    }
-
-    pub fn set_members(&mut self, name: &str, channels: Vec<String>) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        def.channels = channels;
-        Ok(())
-    }
-
-    /// The updated definition comes back because the node has to be
-    /// rebuilt in the new shape from it.
-    pub fn set_role(&mut self, name: &str, role: MixRole) -> Result<BusDef, SinkError> {
-        let def = self.get_mut(name)?;
-        def.role = role;
-        Ok(def.clone())
-    }
-
-    pub fn set_volume(&mut self, name: &str, volume: u8) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        def.volume_percent = volume;
-        Ok(())
-    }
-
-    pub fn set_muted(&mut self, name: &str, muted: bool) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        def.muted = muted;
-        Ok(())
-    }
-
-    /// Allowed on the master mix too - unlike channel membership, mic
-    /// inclusion isn't auto-managed.
-    pub fn set_mic(&mut self, name: &str, mic: bool) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        def.mic = mic;
-        Ok(())
-    }
-
-    /// Unity (100) drops the entry, so a fader back at rest doesn't bloat
-    /// the persisted file.
-    pub fn set_member_gain(
-        &mut self,
-        name: &str,
-        member: &str,
-        percent: u8,
-    ) -> Result<(), SinkError> {
-        let def = self.get_mut(name)?;
-        if percent == 100 {
-            def.member_gains.remove(member);
-        } else {
-            def.member_gains.insert(member.to_string(), percent);
-        }
-        Ok(())
-    }
-
-    /// Drop a deleted channel from every bus's membership and any per-mix
-    /// send level it had.
-    pub fn remove_channel(&mut self, channel: &str) {
-        for bus in &mut self.buses {
-            bus.channels.retain(|c| c != channel);
-            bus.member_gains.remove(channel);
         }
     }
 }

@@ -15,7 +15,7 @@ use crate::audio::pw_native::thread::METER_PREFIX;
 use crate::error::SinkError;
 
 pub struct MeterHandle {
-    _stream: pw::stream::StreamRc,
+    stream: pw::stream::StreamRc,
     _listener: pw::stream::StreamListener<MeterCtx>,
 }
 
@@ -107,16 +107,27 @@ impl MeterHandle {
             .connect(
                 spa::utils::Direction::Input,
                 Some(sink_id),
+                // RT_PROCESS: the peak scan runs on the realtime data thread
+                // (it only touches atomics), not as a wakeup of our main loop.
                 pw::stream::StreamFlags::AUTOCONNECT
                     | pw::stream::StreamFlags::DONT_RECONNECT
-                    | pw::stream::StreamFlags::MAP_BUFFERS,
+                    | pw::stream::StreamFlags::MAP_BUFFERS
+                    | pw::stream::StreamFlags::RT_PROCESS,
                 &mut params,
             )
             .map_err(|e| err("connect", e))?;
 
         Ok(Self {
-            _stream: stream,
+            stream,
             _listener: listener,
         })
+    }
+
+    /// Pause (false) or resume the capture. A paused meter is out of the
+    /// graph schedule entirely, so meters cost nothing while nobody looks.
+    pub fn set_active(&self, active: bool) {
+        if let Err(e) = self.stream.set_active(active) {
+            eprintln!("wavesink: meter set_active({active}): {e}");
+        }
     }
 }

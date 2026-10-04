@@ -4,16 +4,7 @@ use thiserror::Error;
 /// serialisation across IPC (`Result<T, String>`).
 #[derive(Debug, Error)]
 pub enum SinkError {
-    #[error("pactl was not found on this system. Install pulseaudio-utils (the pactl client works against PipeWire via pipewire-pulse).")]
-    PactlNotFound,
-
-    #[error("the PulseAudio/PipeWire server is not reachable. Is PipeWire running? Try `systemctl --user status pipewire pipewire-pulse`.")]
-    ServerUnreachable,
-
-    #[error("pactl command failed: {0}")]
-    CommandFailed(String),
-
-    #[error("failed to parse pactl output: {0}")]
+    #[error("could not parse: {0}")]
     Parse(String),
 
     #[error("unknown virtual sink: {0}")]

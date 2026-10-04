@@ -1,13 +1,13 @@
-//! Native PipeWire backend: replaces pactl subprocess calls with pipewire-rs.
+//! Native PipeWire backend (pipewire-rs): WaveSink's only audio engine.
 //! All PipeWire objects live on a dedicated loop thread; this facade sends
 //! commands over a channel and blocks on an mpsc reply with a timeout.
 
 mod dsp;
 mod eq;
 mod eq_chain;
+mod input_fx;
 pub mod levels;
 pub mod meter;
-mod mic;
 mod pods;
 mod ring;
 mod send_gain;
@@ -96,12 +96,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::ListOutputs { reply })
     }
 
-    fn resolved_channel_outputs(
-        &self,
-    ) -> Result<std::collections::HashMap<String, Option<String>>, SinkError> {
-        self.request(|reply| Cmd::ResolvedOutputs { reply })
-    }
-
     fn set_sink_volume(&self, sink_name: &str, volume_percent: u8) -> Result<(), SinkError> {
         let name = sink_name.to_string();
         self.request(|reply| Cmd::SetNodeVolumeByName {
@@ -109,6 +103,16 @@ impl AudioBackend for PipeWireBackend {
             percent: volume_percent,
             reply,
         })
+    }
+
+    fn set_input_fx(&self, id: &str, fx: &crate::routing_model::FxChain) -> Result<(), SinkError> {
+        let id = id.to_string();
+        let fx = fx.clone();
+        self.request(|reply| Cmd::SetInputFx { id, fx, reply })
+    }
+
+    fn set_meters_active(&self, active: bool) -> Result<(), SinkError> {
+        self.request(|reply| Cmd::SetMetersActive { active, reply })
     }
 
     fn set_sink_mute(&self, sink_name: &str, muted: bool) -> Result<(), SinkError> {
@@ -133,43 +137,10 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
-    fn set_channel_output(
-        &self,
-        sink_name: &str,
-        output_name: Option<&str>,
-    ) -> Result<(), SinkError> {
-        let sink_name = sink_name.to_string();
-        let output_name = output_name.map(str::to_string);
-        self.request(|reply| Cmd::SetChannelOutput {
-            sink_name,
-            output_name,
-            reply,
-        })
-    }
-
-    fn set_channel_failover(&self, sink_name: &str, enabled: bool) -> Result<(), SinkError> {
-        let sink_name = sink_name.to_string();
-        self.request(|reply| Cmd::SetChannelFailover {
-            sink_name,
-            enabled,
-            reply,
-        })
-    }
-
-    fn create_bus(
-        &self,
-        name: &str,
-        label: &str,
-        role: crate::persistence::buses::MixRole,
-    ) -> Result<(), SinkError> {
+    fn create_bus(&self, name: &str, label: &str) -> Result<(), SinkError> {
         let name = name.to_string();
         let label = label.to_string();
-        self.request(|reply| Cmd::CreateBus {
-            name,
-            label,
-            role,
-            reply,
-        })
+        self.request(|reply| Cmd::CreateBus { name, label, reply })
     }
 
     fn destroy_bus(&self, name: &str) -> Result<(), SinkError> {
@@ -185,11 +156,6 @@ impl AudioBackend for PipeWireBackend {
             channels,
             reply,
         })
-    }
-
-    fn set_bus_mic(&self, name: &str, mic: bool) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetBusMic { name, mic, reply })
     }
 
     fn set_bus_member_gain(
@@ -243,22 +209,8 @@ impl AudioBackend for PipeWireBackend {
         })
     }
 
-    fn set_monitor(&self, name: &str, enabled: bool) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetMonitor {
-            name,
-            enabled,
-            reply,
-        })
-    }
-
     fn list_input_devices(&self) -> Result<Vec<crate::audio::types::OutputDevice>, SinkError> {
         self.request(|reply| Cmd::ListInputs { reply })
-    }
-
-    fn set_mic_config(&self, config: &crate::audio::types::MicConfig) -> Result<(), SinkError> {
-        let config = config.clone();
-        self.request(|reply| Cmd::SetMicConfig { config, reply })
     }
 
     fn set_channel_eq(
@@ -271,28 +223,6 @@ impl AudioBackend for PipeWireBackend {
         self.request(|reply| Cmd::SetChannelEq {
             sink_name,
             config,
-            reply,
-        })
-    }
-
-    fn get_default_devices(&self) -> Result<(Option<String>, Option<String>), SinkError> {
-        self.request(|reply| Cmd::GetDefaults { reply })
-    }
-
-    fn set_default_output(&self, name: &str) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetDefault {
-            input: false,
-            name,
-            reply,
-        })
-    }
-
-    fn set_default_input(&self, name: &str) -> Result<(), SinkError> {
-        let name = name.to_string();
-        self.request(|reply| Cmd::SetDefault {
-            input: true,
-            name,
             reply,
         })
     }

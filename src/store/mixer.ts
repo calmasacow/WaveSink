@@ -2,21 +2,19 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppStream,
-  BusDef,
   EqConfig,
-  MicConfig,
-  MixRole,
   OutputDevice,
   ProfileInfo,
   SeenApp,
   VirtualSink,
+  RoutingMix,
   RoutingModel,
   RouteCell,
   FxChain,
 } from "../types";
 
 // Faders fire on every pointer move; debounce per target so a drag doesn't
-// spawn a pactl subprocess per pixel. UI state updates optimistically.
+// send a backend command per pixel. UI state updates optimistically.
 const pendingInvokes = new Map<string, number>();
 function debouncedInvoke(
   key: string,
@@ -38,14 +36,45 @@ function debouncedInvoke(
 /** Per-sink [left, right] peak amplitudes (0-1), streamed from the native backend. */
 export type Levels = Record<string, [number, number]>;
 
+/** State with one mix's fields replaced (optimistic edit before the backend
+ *  confirms; a refused edit refetches the routing model). */
+function withMix(s: MixerStore, id: string, patch: Partial<RoutingMix>): Partial<MixerStore> {
+  if (!s.routing) return {};
+  return {
+    routing: {
+      ...s.routing,
+      mixes: s.routing.mixes.map((mix) => (mix.id === id ? { ...mix, ...patch } : mix)),
+    },
+  };
+}
+
+/** State with one channel's presentation replaced in both views of it: the
+ *  strip list (Apps screen) and the routing model's input (mixer). */
+function withChannel(
+  s: MixerStore,
+  name: string,
+  patch: Partial<Pick<VirtualSink, "label" | "icon" | "icon_color">>,
+): Partial<MixerStore> {
+  return {
+    channels: s.channels.map((c) => (c.name === name ? { ...c, ...patch } : c)),
+    routing: s.routing
+      ? {
+          ...s.routing,
+          inputs: s.routing.inputs.map((i) => (i.id === name ? { ...i, ...patch } : i)),
+        }
+      : null,
+  };
+}
+
 interface MixerStore {
   routing: RoutingModel | null;
   fetchRouting: () => Promise<void>;
   setRouteCell: (inputId: string, mixId: string, cell: RouteCell) => Promise<void>;
-  setMixMonitor: (mixId: string | null) => Promise<void>;
   setMixOutputs: (mixId: string, devices: string[]) => Promise<void>;
   setInputFx: (inputId: string, fx: FxChain) => Promise<void>;
   setInputLevel: (inputId: string, volume: number, muted: boolean) => Promise<void>;
+  /** Solo an input (mutes every other one), or un-solo it and restore. */
+  toggleSolo: (inputId: string) => Promise<void>;
   updateHardwareInput: (
     inputId: string,
     label: string,
@@ -62,37 +91,16 @@ interface MixerStore {
   ) => Promise<boolean>;
   channels: VirtualSink[];
   appStreams: AppStream[];
-  /** Live VU levels; stays empty under the pactl fallback backend. */
-  levels: Levels;
-  setLevels: (levels: Levels) => void;
   /** Physical output devices. */
   outputDevices: OutputDevice[];
-  /** Channel -> chosen output node name (null = follow system default). */
-  channelOutputs: Record<string, string | null>;
-  /**
-   * Channel -> the device node name it is actually routed to right now.
-   * Lets a follow-default strip show where audio really goes and reflects failover.
-   */
-  resolvedOutputs: Record<string, string | null>;
-  /**
-   * Channel -> whether it fails over to another device when its chosen device
-   * is gone. Defaults to on (absent treated as true).
-   */
-  channelFailover: Record<string, boolean>;
   fetchOutputs: () => Promise<void>;
-  setChannelOutput: (sinkName: string, outputName: string | null) => Promise<void>;
-  setChannelFailover: (sinkName: string, enabled: boolean) => Promise<void>;
-  /** Sonar-style "same device on all channels". */
-  setAllOutputs: (outputName: string | null) => Promise<void>;
   /** Channel -> parametric EQ (absent = never configured, i.e. default). */
   eqConfigs: Record<string, EqConfig>;
   fetchEq: () => Promise<void>;
   setChannelEq: (sinkName: string, config: EqConfig) => Promise<void>;
-  /** Null until loaded. */
-  micConfig: MicConfig | null;
+  /** Hardware capture devices, for adding a hardware input. */
   inputDevices: OutputDevice[];
-  fetchMic: () => Promise<void>;
-  setMicConfig: (patch: Partial<MicConfig>) => Promise<void>;
+  fetchInputDevices: () => Promise<void>;
   profiles: ProfileInfo[];
   /** Bind or clear the output device that auto-loads a profile. */
   setProfileTrigger: (name: string, device: string | null) => Promise<void>;
@@ -117,49 +125,25 @@ interface MixerStore {
   addChannel: (label: string, icon: string | null, iconColor?: string | null) => Promise<boolean>;
   renameChannel: (sinkName: string, label: string) => Promise<void>;
   removeChannel: (sinkName: string) => Promise<void>;
-  /** Visual-only reorder while dragging a strip. */
-  moveChannel: (from: string, to: string) => void;
-  /** Persist the current strip order (called on drag end). */
-  commitChannelOrder: () => Promise<void>;
   setChannelIcon: (sinkName: string, icon: string) => Promise<void>;
   setChannelIconColor: (sinkName: string, iconColor: string) => Promise<void>;
-  /** User-defined mixes (record buses). */
-  buses: BusDef[];
-  fetchBuses: () => Promise<void>;
+  /** Mixes live in `routing.mixes`; these edit one and persist it. */
   addBus: (label: string) => Promise<void>;
   renameBus: (name: string, label: string) => Promise<void>;
   setBusIcon: (name: string, icon: string) => Promise<void>;
   setBusIconColor: (name: string, iconColor: string) => Promise<void>;
   removeBus: (name: string) => Promise<void>;
-  setBusMembers: (name: string, channels: string[]) => Promise<void>;
-  /** Manual vs auto-include mode (carried set preserved). */
-  setBusExclude: (name: string, exclude: boolean) => Promise<void>;
-  /** Whether the processed virtual mic feeds this mix too; persisted. */
-  setBusMic: (name: string, mic: boolean) => Promise<void>;
-  /** Which device list the mix shows up in. */
-  setBusRole: (name: string, role: MixRole) => Promise<void>;
-  /** A mix's playback level for recorders (0-150%); persisted. */
+  /** A mix's level (0-100%): what recorders and its outputs hear. */
   setBusVolume: (name: string, volume: number) => Promise<void>;
   /** Mute a mix for recorders; persisted. */
   setBusMute: (name: string, muted: boolean) => Promise<void>;
-  /** One member's send level within one mix (0-150%; 100 = no override);
-   *  persisted, independent of the member's own volume. */
-  setBusMemberGain: (bus: string, member: string, percent: number) => Promise<void>;
-  /** Open (or focus) the popout window with one mix's send levels. */
-  openMixFaderWindow: (bus: string) => Promise<void>;
-  /** Session-scoped "listen on default output" toggles per node. */
-  monitors: Record<string, boolean>;
-  toggleMonitor: (name: string) => Promise<void>;
   /** Name of the most recently saved/loaded profile this session. */
   activeProfile: string | null;
-  /** Fatal error surfaced to the UI (e.g. pactl missing, PipeWire down). */
+  /** Error surfaced to the UI (e.g. a command the backend rejected). */
   error: string | null;
   /** Dismiss the error banner. */
   clearError: () => void;
   initialized: boolean;
-  /** True on the native PipeWire backend; false on the pactl fallback
-   * (mixes/mic/monitoring unavailable). Null until known. */
-  backendNative: boolean | null;
   /** First-run tutorial visible. */
   showOnboarding: boolean;
   /** True when the tutorial was reopened from Settings (no setup choice). */
@@ -223,15 +207,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       await get().fetchRouting();
     }
   },
-  setMixMonitor: async (mixId) => {
-    set((s) => ({ routing: s.routing ? { ...s.routing, monitor_mix: mixId } : null }));
-    try {
-      await invoke(mixId ? "set_mix_monitor" : "clear_mix_monitor", mixId ? { mixId } : {});
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchRouting();
-    }
-  },
   setInputFx: async (inputId, fx) => {
     set((s) => ({
       routing: s.routing
@@ -249,6 +224,15 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       set({ error: String(e) });
       await get().fetchRouting();
     }
+  },
+  toggleSolo: async (inputId) => {
+    try {
+      await invoke("toggle_solo", { inputId });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+    // Mutes changed on many inputs: refetch both views of them.
+    await Promise.all([get().fetchChannels(), get().fetchRouting()]);
   },
   setInputLevel: async (inputId, volume, muted) => {
     set((s) => ({
@@ -323,26 +307,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   },
   channels: [],
   appStreams: [],
-  levels: {},
-  setLevels: (levels) => {
-    // Levels arrive at 10 Hz even when everything is silent; skipping
-    // no-op updates avoids re-rendering every strip 10×/second at idle.
-    const prev = get().levels;
-    const keys = Object.keys(levels);
-    const unchanged =
-      keys.length === Object.keys(prev).length &&
-      keys.every((k) => {
-        const a = prev[k];
-        const b = levels[k];
-        return a && Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4;
-      });
-    if (!unchanged) set({ levels });
-  },
   outputDevices: [],
-  channelOutputs: {},
-  resolvedOutputs: {},
-  channelFailover: {},
-  micConfig: null,
   inputDevices: [],
   seenApps: [],
   profiles: [],
@@ -350,7 +315,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   error: null,
   clearError: () => set({ error: null }),
   initialized: false,
-  backendNative: null,
   showOnboarding: false,
   onboardingReplay: false,
 
@@ -384,9 +348,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       await invoke("init_virtual_devices");
       set({ initialized: true, error: null });
-      void invoke<{ native: boolean }>("get_backend_info")
-        .then((i) => set({ backendNative: i.native }))
-        .catch(() => {});
       void invoke<{
         onboarded: boolean;
       }>("get_prefs")
@@ -400,8 +361,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchProfiles(),
         get().fetchOutputs(),
         get().fetchEq(),
-        get().fetchMic(),
-        get().fetchBuses(),
+        get().fetchInputDevices(),
         get().fetchRouting(),
       ]);
       // Active profile is tracked backend-side (survives restarts).
@@ -500,51 +460,10 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   fetchOutputs: async () => {
     try {
-      const [outputDevices, channelOutputs, resolvedOutputs, channelFailover] = await Promise.all([
-        invoke<OutputDevice[]>("get_output_devices"),
-        invoke<Record<string, string | null>>("get_channel_outputs"),
-        invoke<Record<string, string | null>>("get_resolved_outputs"),
-        invoke<Record<string, boolean>>("get_channel_failover"),
-      ]);
-      const s = get();
-      const patch: Partial<MixerStore> = {};
-      if (!jsonEqual(s.outputDevices, outputDevices)) patch.outputDevices = outputDevices;
-      if (!jsonEqual(s.channelOutputs, channelOutputs)) patch.channelOutputs = channelOutputs;
-      if (!jsonEqual(s.resolvedOutputs, resolvedOutputs)) patch.resolvedOutputs = resolvedOutputs;
-      if (!jsonEqual(s.channelFailover, channelFailover)) patch.channelFailover = channelFailover;
-      if (Object.keys(patch).length) set(patch);
+      const outputDevices = await invoke<OutputDevice[]>("get_output_devices");
+      if (!jsonEqual(get().outputDevices, outputDevices)) set({ outputDevices });
     } catch (e) {
       set({ error: String(e) });
-    }
-  },
-
-  setChannelOutput: async (sinkName, outputName) => {
-    set((s) => ({
-      channelOutputs: { ...s.channelOutputs, [sinkName]: outputName },
-    }));
-    try {
-      await invoke("set_channel_output", { sinkName, outputName: outputName ?? "" });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchOutputs();
-    }
-  },
-
-  setChannelFailover: async (sinkName, enabled) => {
-    set((s) => ({
-      channelFailover: { ...s.channelFailover, [sinkName]: enabled },
-    }));
-    try {
-      await invoke("set_channel_failover", { sinkName, enabled });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchOutputs();
-    }
-  },
-
-  setAllOutputs: async (outputName) => {
-    for (const channel of get().channels) {
-      await get().setChannelOutput(channel.name, outputName);
     }
   },
 
@@ -569,28 +488,13 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     });
   },
 
-  fetchMic: async () => {
+  fetchInputDevices: async () => {
     try {
-      const [micConfig, inputDevices] = await Promise.all([
-        invoke<MicConfig>("get_mic_config"),
-        invoke<OutputDevice[]>("get_input_devices"),
-      ]);
-      set({ micConfig, inputDevices });
+      const inputDevices = await invoke<OutputDevice[]>("get_input_devices");
+      set({ inputDevices });
     } catch (e) {
       set({ error: String(e) });
     }
-  },
-
-  setMicConfig: async (patch) => {
-    const current = get().micConfig;
-    if (!current) return;
-    const config = { ...current, ...patch };
-    set({ micConfig: config });
-    // Debounced: slider drags and rename typing settle into one apply.
-    debouncedInvoke("micConfig", "set_mic_config", { config }, (e) => {
-      set({ error: String(e) });
-      void get().fetchMic();
-    });
   },
 
   fetchProfiles: async () => {
@@ -620,7 +524,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
       get().fetchEq(),
       get().fetchSeenApps(),
       get().fetchProfiles(),
-      get().fetchBuses(),
       get().fetchRouting(),
     ]);
   },
@@ -695,7 +598,6 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchOutputs(),
         get().fetchEq(),
         get().fetchSeenApps(),
-        get().fetchBuses(),
         get().fetchRouting(),
       ]);
     } catch (e) {
@@ -717,12 +619,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     try {
       await invoke("add_channel", { label, icon, iconColor });
       // Buses too: the master (and auto-include mixes) absorb the channel.
-      await Promise.all([
-        get().fetchChannels(),
-        get().fetchOutputs(),
-        get().fetchBuses(),
-        get().fetchRouting(),
-      ]);
+      await Promise.all([get().fetchChannels(), get().fetchOutputs(), get().fetchRouting()]);
       return true;
     } catch (e) {
       set({ error: String(e) });
@@ -730,21 +627,9 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
     }
   },
 
-  buses: [],
-
-  fetchBuses: async () => {
-    try {
-      const buses = await invoke<BusDef[]>("list_buses");
-      set({ buses });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
   addBus: async (label) => {
     try {
       await invoke("add_bus", { label });
-      await get().fetchBuses();
       await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
@@ -752,38 +637,29 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   },
 
   renameBus: async (name, label) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, label } : b)),
-    }));
+    set((s) => withMix(s, name, { label }));
     try {
       await invoke("rename_bus", { name, label });
-      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchBuses();
       await get().fetchRouting();
     }
   },
   setBusIcon: async (name, icon) => {
-    set((s) => ({ buses: s.buses.map((bus) => (bus.name === name ? { ...bus, icon } : bus)) }));
+    set((s) => withMix(s, name, { icon }));
     try {
       await invoke("set_bus_icon", { name, icon });
-      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchBuses();
+      await get().fetchRouting();
     }
   },
   setBusIconColor: async (name, iconColor) => {
-    set((s) => ({
-      buses: s.buses.map((bus) => (bus.name === name ? { ...bus, icon_color: iconColor } : bus)),
-    }));
+    set((s) => withMix(s, name, { icon_color: iconColor }));
     try {
       await invoke("set_bus_icon_color", { name, iconColor });
-      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchBuses();
       await get().fetchRouting();
     }
   },
@@ -791,201 +667,56 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   removeBus: async (name) => {
     try {
       await invoke("remove_bus", { name });
-      await get().fetchBuses();
-      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchRouting();
     }
-  },
-
-  setBusMembers: async (name, channels) => {
-    // `channels` is the carried set; auto-include mixes store the
-    // complement (mirrors the backend's conversion).
-    const all = get().channels.map((c) => c.name);
-    set((s) => ({
-      buses: s.buses.map((b) =>
-        b.name === name
-          ? { ...b, channels: b.exclude ? all.filter((c) => !channels.includes(c)) : channels }
-          : b,
-      ),
-    }));
-    try {
-      await invoke("set_bus_members", { name, channels });
-      // The backend converts against its own channel set - sync up so the
-      // stored complement can't drift if channels changed mid-flight.
-      await get().fetchBuses();
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
-  },
-
-  setBusExclude: async (name, exclude) => {
-    const all = get().channels.map((c) => c.name);
-    set((s) => ({
-      buses: s.buses.map((b) => {
-        if (b.name !== name || b.exclude === exclude) return b;
-        // Preserve the carried set; only the stored representation flips.
-        const carried = b.exclude ? all.filter((c) => !b.channels.includes(c)) : b.channels;
-        return {
-          ...b,
-          exclude,
-          channels: exclude ? all.filter((c) => !carried.includes(c)) : carried,
-        };
-      }),
-    }));
-    try {
-      await invoke("set_bus_exclude", { name, exclude });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
-  },
-
-  setBusRole: async (name, role) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, role } : b)),
-    }));
-    try {
-      await invoke("set_bus_role", { name, role });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
-  },
-
-  setBusMic: async (name, mic) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, mic } : b)),
-    }));
-    try {
-      await invoke("set_bus_mic", { name, mic });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchBuses();
-    }
+    await get().fetchRouting();
   },
 
   setBusVolume: async (name, volume) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, volume_percent: volume } : b)),
-    }));
+    set((s) => withMix(s, name, { volume_percent: volume }));
     debouncedInvoke(`busvol:${name}`, "set_bus_volume", { name, volume }, (e) => {
       set({ error: String(e) });
-      void get().fetchBuses();
+      void get().fetchRouting();
     });
   },
 
-  setBusMemberGain: async (bus, member, percent) => {
-    set((s) => ({
-      buses: s.buses.map((b) =>
-        b.name === bus ? { ...b, member_gains: { ...b.member_gains, [member]: percent } } : b,
-      ),
-    }));
-    debouncedInvoke(
-      `busgain:${bus}:${member}`,
-      "set_bus_member_gain",
-      { bus, member, percent },
-      (e) => {
-        set({ error: String(e) });
-        void get().fetchBuses();
-      },
-    );
-  },
-
-  openMixFaderWindow: async (bus) => {
-    try {
-      await invoke("open_mix_fader_window", { bus });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
   setBusMute: async (name, muted) => {
-    set((s) => ({
-      buses: s.buses.map((b) => (b.name === name ? { ...b, muted } : b)),
-    }));
+    set((s) => withMix(s, name, { muted }));
     try {
       await invoke("set_bus_mute", { name, muted });
-      await get().fetchRouting();
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchBuses();
       await get().fetchRouting();
-    }
-  },
-
-  monitors: {},
-
-  toggleMonitor: async (name) => {
-    const enabled = !get().monitors[name];
-    set((s) => ({ monitors: { ...s.monitors, [name]: enabled } }));
-    try {
-      await invoke("set_monitor", { sinkName: name, enabled });
-    } catch (e) {
-      set({ error: String(e) });
-      set((s) => ({ monitors: { ...s.monitors, [name]: !enabled } }));
     }
   },
 
   setChannelIcon: async (sinkName, icon) => {
-    set((s) => ({
-      channels: s.channels.map((c) => (c.name === sinkName ? { ...c, icon } : c)),
-    }));
+    set((s) => withChannel(s, sinkName, { icon }));
     try {
       await invoke("set_channel_icon", { sinkName, icon });
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchChannels();
+      await Promise.all([get().fetchChannels(), get().fetchRouting()]);
     }
   },
   setChannelIconColor: async (sinkName, iconColor) => {
-    set((s) => ({
-      channels: s.channels.map((channel) =>
-        channel.name === sinkName ? { ...channel, icon_color: iconColor } : channel,
-      ),
-    }));
+    set((s) => withChannel(s, sinkName, { icon_color: iconColor }));
     try {
       await invoke("set_channel_icon_color", { sinkName, iconColor });
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchChannels();
+      await Promise.all([get().fetchChannels(), get().fetchRouting()]);
     }
   },
 
   renameChannel: async (sinkName, label) => {
-    set((s) => ({
-      channels: s.channels.map((c) => (c.name === sinkName ? { ...c, label } : c)),
-    }));
+    set((s) => withChannel(s, sinkName, { label }));
     try {
       await invoke("rename_channel", { sinkName, label });
     } catch (e) {
       set({ error: String(e) });
-      await get().fetchChannels();
-    }
-  },
-
-  // Visual-only move while dragging; commitChannelOrder persists on drop.
-  moveChannel: (from, to) => {
-    set((s) => {
-      const arr = [...s.channels];
-      const fi = arr.findIndex((c) => c.name === from);
-      const ti = arr.findIndex((c) => c.name === to);
-      if (fi < 0 || ti < 0 || fi === ti) return {};
-      const [moved] = arr.splice(fi, 1);
-      arr.splice(ti, 0, moved);
-      return { channels: arr };
-    });
-  },
-
-  commitChannelOrder: async () => {
-    const order = get().channels.map((c) => c.name);
-    try {
-      await invoke("reorder_channels", { order });
-    } catch (e) {
-      set({ error: String(e) });
-      await get().fetchChannels();
+      await Promise.all([get().fetchChannels(), get().fetchRouting()]);
     }
   },
 
@@ -997,7 +728,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
         get().fetchAppStreams(),
         get().fetchOutputs(),
         get().fetchEq(), // the channel's EQ entry is gone too
-        get().fetchBuses(), // memberships dropped the channel
+        get().fetchRouting(), // and its row and cells
       ]);
     } catch (e) {
       set({ error: String(e) });

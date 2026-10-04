@@ -5,55 +5,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SinkError;
 
-/// Legacy device-label preference retained for config compatibility.
+/// What the meters do while the window is open but not focused (WaveSink
+/// on a second monitor while gaming, say).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum DeviceLabelStyle {
-    /// "Game"
+pub enum MeterUnfocused {
+    /// Drop to 10 fps.
     #[default]
-    Plain,
-    /// "Game (WaveSink)"
-    Suffix,
-    /// "WaveSink · Game"
-    Prefix,
+    Reduced,
+    /// Keep the full rate.
+    Full,
+    /// Stop metering until focused again.
+    Off,
 }
+
+/// The meter frame rates offered in Settings.
+pub const METER_FPS_CHOICES: [u8; 3] = [10, 20, 30];
+/// The rate a reduced (unfocused) meter runs at.
+pub const METER_REDUCED_FPS: u8 = 10;
 
 /// App preferences, stored at `$XDG_CONFIG_HOME/wavesink/prefs.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Prefs {
-    #[serde(default)]
-    pub device_label_style: DeviceLabelStyle,
     /// First-run tutorial completed (false = show it on launch).
     #[serde(default)]
     pub onboarded: bool,
-    /// ChatMix-style balance: the two channel sink names being balanced
-    /// (None = auto: Game/Chat when present, else the first two channels).
-    #[serde(default)]
-    pub balance_a: Option<String>,
-    #[serde(default)]
-    pub balance_b: Option<String>,
-    /// Show the balance slider in the title bar.
-    #[serde(default = "default_true")]
-    pub show_balance: bool,
     /// When autostarting on login, boot straight to the tray instead of
     /// showing the window (only meaningful with autostart enabled).
     #[serde(default)]
     pub start_minimized: bool,
+    /// Pro Audio Metering: dBFS meter scale, standard color zones and dB
+    /// labels. Off = the familiar 0-100% everywhere.
+    #[serde(default)]
+    pub meter_pro: bool,
+    /// Meter frame rate while the window is focused (10, 20 or 30).
+    #[serde(default = "default_meter_fps")]
+    pub meter_fps: u8,
+    #[serde(default)]
+    pub meter_unfocused: MeterUnfocused,
 }
 
-fn default_true() -> bool {
-    true
+fn default_meter_fps() -> u8 {
+    30
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
-            device_label_style: DeviceLabelStyle::default(),
             onboarded: false,
-            balance_a: None,
-            balance_b: None,
-            show_balance: true,
             start_minimized: false,
+            meter_pro: false,
+            meter_fps: default_meter_fps(),
+            meter_unfocused: MeterUnfocused::default(),
         }
     }
 }
@@ -104,13 +107,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decorate_styles() {
-        let mut p = Prefs::default();
-        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
-        p.device_label_style = DeviceLabelStyle::Suffix;
-        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
-        p.device_label_style = DeviceLabelStyle::Prefix;
-        assert_eq!(p.decorate("Game"), "Game (WaveSink)");
+    fn decorate_marks_wavesink_nodes() {
+        assert_eq!(Prefs::default().decorate("Game"), "Game (WaveSink)");
     }
 
     #[test]
@@ -121,11 +119,25 @@ mod tests {
         assert_eq!(Prefs::parse("{not json"), Prefs::default());
         assert_eq!(Prefs::parse("[]"), Prefs::default());
         assert_eq!(
-            Prefs::parse(r#"{"device_label_style":"bogus_style"}"#),
+            Prefs::parse(r#"{"start_minimized":"not a bool"}"#),
             Prefs::default()
         );
-        // Unknown fields are tolerated; known fields still apply.
-        let p = Prefs::parse(r#"{"device_label_style":"suffix","future_field":1}"#);
-        assert_eq!(p.device_label_style, DeviceLabelStyle::Suffix);
+        // Unknown fields are tolerated (including the retired
+        // device_label_style); known fields still apply.
+        let p = Prefs::parse(r#"{"device_label_style":"suffix","onboarded":true}"#);
+        assert!(p.onboarded);
+    }
+
+    #[test]
+    fn meter_prefs_default_for_older_files() {
+        // A prefs.json written before meter settings existed.
+        let p = Prefs::parse(r#"{"onboarded":true}"#);
+        assert!(!p.meter_pro);
+        assert_eq!(p.meter_fps, 30);
+        assert_eq!(p.meter_unfocused, MeterUnfocused::Reduced);
+        let p = Prefs::parse(r#"{"meter_pro":true,"meter_fps":20,"meter_unfocused":"off"}"#);
+        assert!(p.meter_pro);
+        assert_eq!(p.meter_fps, 20);
+        assert_eq!(p.meter_unfocused, MeterUnfocused::Off);
     }
 }

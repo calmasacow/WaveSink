@@ -1,32 +1,23 @@
 use std::collections::HashSet;
 
-use crate::audio::types::{AppStream, VirtualSink};
+use crate::audio::types::AppStream;
 use crate::persistence::aliases::Aliases;
 use crate::persistence::assignments::Assignments;
-use crate::persistence::channels::Channels;
 
-/// In-memory mixer state: the source of truth for channel volume/mute as
-/// set through the UI, plus the persistent app→channel assignments.
+/// In-memory mixer state: the routing model (the one source of truth for
+/// inputs, mixes and routes) plus app assignments, EQ, profiles and prefs.
 #[derive(Debug, Default)]
 pub struct MixerState {
-    /// Wave Link-style input×mix state. Legacy channel/bus fields are kept as
-    /// compatibility projections while the PipeWire graph is migrated.
+    /// Inputs, mixes and every input×mix cell, persisted as routing.json.
     pub routing: crate::routing_model::RoutingModel,
-    pub channels: Vec<VirtualSink>,
-    /// User-defined channel set (persisted to disk).
-    pub channel_defs: Channels,
     /// True once `init_virtual_devices` has created the sinks.
     pub initialized: bool,
     /// Saved app→channel assignments (persisted to disk + WirePlumber conf).
     pub assignments: Assignments,
     /// User-chosen display names for discovered apps (persisted to disk).
     pub aliases: Aliases,
-    /// Per-channel output device choices (persisted to disk).
-    pub outputs: crate::persistence::outputs::ChannelOutputs,
     /// Per-channel parametric EQ configs (persisted to disk).
     pub eq: crate::persistence::eq::ChannelEq,
-    /// Mic chain configuration (persisted to disk).
-    pub mic: crate::audio::types::MicConfig,
     /// Every app identity ever observed (history + ignore list).
     pub seen: crate::persistence::seen::SeenApps,
     /// Unix seconds of the last `seen` write; bounds how stale `last_seen`
@@ -38,8 +29,6 @@ pub struct MixerState {
     /// Cached trigger device of `active_profile`, so autosave preserves it
     /// without re-reading the profile file on every mutation.
     pub active_trigger: Option<String>,
-    /// User-defined mixes (record buses), persisted to disk.
-    pub buses: crate::persistence::buses::Buses,
     /// App preferences (device naming etc.), persisted to disk.
     pub prefs: crate::persistence::prefs::Prefs,
     /// Streams already auto-routed once, by `object.serial` (node ids
@@ -48,30 +37,6 @@ pub struct MixerState {
 }
 
 impl MixerState {
-    /// Populate the channel strips, each restored to its persisted volume/mute
-    /// (100%/unmuted if the channel has never been touched).
-    pub fn init_defaults(&mut self) {
-        self.channels = self
-            .channel_defs
-            .channels
-            .iter()
-            .map(|def| VirtualSink {
-                name: def.name.clone(),
-                label: def.label.clone(),
-                icon: def.icon.clone(),
-                icon_color: def.icon_color.clone(),
-                volume_percent: def.volume_percent,
-                muted: def.muted,
-                stream_mix: def.stream_mix,
-            })
-            .collect();
-        self.initialized = true;
-    }
-
-    pub fn channel_mut(&mut self, sink_name: &str) -> Option<&mut VirtualSink> {
-        self.channels.iter_mut().find(|c| c.name == sink_name)
-    }
-
     /// Forget history entries the user never acted on and hasn't seen in a
     /// week; returns true when something changed and should be persisted.
     pub fn prune_stale_apps(&mut self, now: u64) -> bool {
@@ -133,29 +98,145 @@ impl MixerState {
             .map(str::to_string)
     }
 
+    /// Fold history rows, assignments and aliases keyed on a plain
+    /// executable into the desktop app it now resolves to (see
+    /// `identity::desktop_for_exe`). Earlier versions keyed one app on its
+    /// exe or its desktop id depending on how it was launched, so it showed
+    /// up several times. A desktop-keyed assignment or alias wins over the
+    /// exe one; history keeps the latest sighting. Returns which stores
+    /// changed: (seen, assignments, aliases).
+    pub fn merge_exe_identities(
+        &mut self,
+        desktops: &dyn crate::audio::identity::DesktopDb,
+    ) -> (bool, bool, bool) {
+        use crate::audio::identity::{desktop_for_exe, PROP_DESKTOP, PROP_EXE};
+        use crate::persistence::assignments::identity_key;
+        let target = |prop: &str, value: &str| {
+            (prop == PROP_EXE)
+                .then(|| desktop_for_exe(desktops, value))
+                .flatten()
+        };
+
+        let mut seen_changed = false;
+        let mut i = 0;
+        while i < self.seen.apps.len() {
+            let entry = &self.seen.apps[i];
+            let Some((id, name)) = target(&entry.match_prop, &entry.match_value) else {
+                i += 1;
+                continue;
+            };
+            seen_changed = true;
+            let source = self.seen.apps.remove(i);
+            match self
+                .seen
+                .apps
+                .iter_mut()
+                .find(|e| e.match_prop == PROP_DESKTOP && e.match_value == id)
+            {
+                Some(existing) => {
+                    if source.last_seen > existing.last_seen {
+                        existing.last_seen = source.last_seen;
+                    }
+                    existing.ignored |= source.ignored;
+                    if existing.icon_path.is_none() {
+                        existing.icon_path = source.icon_path;
+                    }
+                }
+                None => self.seen.apps.insert(
+                    i,
+                    crate::persistence::seen::SeenEntry {
+                        match_prop: PROP_DESKTOP.to_string(),
+                        match_value: id,
+                        display_name: name,
+                        ..source
+                    },
+                ),
+            }
+        }
+
+        // Rename exe-keyed rules, then keep one rule per identity: a rule that
+        // was already desktop-keyed wins over a renamed one (stable sort).
+        let mut renamed_keys: Vec<(String, String)> = Vec::new();
+        let mut rules: Vec<(bool, crate::persistence::assignments::Assignment)> =
+            std::mem::take(&mut self.assignments.assignments)
+                .into_iter()
+                .map(|mut a| {
+                    let moved = target(&a.match_prop, &a.match_value).map(|(id, _)| {
+                        renamed_keys.push((
+                            identity_key(&a.match_prop, &a.match_value),
+                            identity_key(PROP_DESKTOP, &id),
+                        ));
+                        a.match_prop = PROP_DESKTOP.to_string();
+                        a.match_value = id;
+                    });
+                    (moved.is_some(), a)
+                })
+                .collect();
+        let assignments_changed = !renamed_keys.is_empty();
+        rules.sort_by_key(|(moved, _)| *moved);
+        let mut out: Vec<crate::persistence::assignments::Assignment> = Vec::new();
+        for (_, mut a) in rules {
+            if out
+                .iter()
+                .any(|o| o.match_prop == a.match_prop && o.match_value == a.match_value)
+            {
+                continue;
+            }
+            for key in &mut a.adopted_by {
+                if let Some((_, to)) = renamed_keys.iter().find(|(from, _)| from == key) {
+                    *key = to.clone();
+                }
+            }
+            out.push(a);
+        }
+        self.assignments.assignments = out;
+
+        let mut aliases: Vec<(bool, crate::persistence::aliases::AliasEntry)> =
+            std::mem::take(&mut self.aliases.aliases)
+                .into_iter()
+                .map(|mut alias| {
+                    let moved = target(&alias.match_prop, &alias.match_value).map(|(id, _)| {
+                        alias.match_prop = PROP_DESKTOP.to_string();
+                        alias.match_value = id;
+                    });
+                    (moved.is_some(), alias)
+                })
+                .collect();
+        let aliases_changed = aliases.iter().any(|(moved, _)| *moved);
+        aliases.sort_by_key(|(moved, _)| *moved);
+        let mut out: Vec<crate::persistence::aliases::AliasEntry> = Vec::new();
+        for (_, alias) in aliases {
+            if !out
+                .iter()
+                .any(|o| o.match_prop == alias.match_prop && o.match_value == alias.match_value)
+            {
+                out.push(alias);
+            }
+        }
+        self.aliases.aliases = out;
+
+        (seen_changed, assignments_changed, aliases_changed)
+    }
+
     pub fn reset(&mut self) {
-        self.channels.clear();
         self.initialized = false;
+    }
+
+    /// Test setup: the classic four channels in one mix, sinks "created".
+    #[cfg(test)]
+    pub fn init_test_defaults(&mut self) {
+        self.routing = crate::routing_model::RoutingModel::from_legacy(
+            &crate::persistence::channels::Channels::default(),
+            &crate::persistence::buses::Buses::default(),
+            &Default::default(),
+        );
+        self.initialized = true;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn init_defaults_creates_four_channels() {
-        let mut state = MixerState::default();
-        state.init_defaults();
-        assert_eq!(state.channels.len(), 4);
-        assert!(state.initialized);
-        assert_eq!(state.channels[0].name, "sink_game");
-        assert_eq!(state.channels[0].label, "Game");
-        assert!(state
-            .channels
-            .iter()
-            .all(|c| c.volume_percent == 100 && !c.muted));
-    }
 
     #[test]
     fn prune_stale_apps_exempts_assigned_and_aliased() {
@@ -202,7 +283,7 @@ mod tests {
     #[test]
     fn auto_route_plans_once_and_respects_a_manual_move() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -222,7 +303,7 @@ mod tests {
     #[test]
     fn auto_route_skips_a_stream_already_on_target() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -248,7 +329,7 @@ mod tests {
     #[test]
     fn auto_route_reroutes_a_restarted_stream_on_a_recycled_node_id() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -268,7 +349,7 @@ mod tests {
     #[test]
     fn auto_route_leaves_an_unsettled_stream_for_the_next_tick() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Firefox", "sink_game");
@@ -289,7 +370,7 @@ mod tests {
         // Bug shape: a rule keyed on the stream's own media.name must still
         // apply.
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("media.name", "audio-src", "sink_music");
@@ -307,7 +388,7 @@ mod tests {
         // Bug shape: a cleared rule must not be revived by its adopted legacy
         // rule.
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state
             .assignments
             .set("application.name", "Discord", "sink_voice");
@@ -322,20 +403,87 @@ mod tests {
     #[test]
     fn auto_route_ledger_forgets_dead_streams() {
         let mut state = MixerState::default();
-        state.init_defaults();
+        state.init_test_defaults();
         state.plan_auto_routes(&[stream(1, 10, "A", None), stream(2, 11, "B", None)]);
         assert_eq!(state.auto_routed.len(), 2);
         state.plan_auto_routes(&[stream(1, 10, "A", None)]);
         assert_eq!(state.auto_routed, HashSet::from([10]));
     }
 
+    struct OneDesktop;
+    impl crate::audio::identity::DesktopDb for OneDesktop {
+        fn name_by_id(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn entry_for_exec(&self, _: &[String], _: &str) -> Option<(String, String)> {
+            None
+        }
+        fn entry_by_exec(&self, exe: &str) -> Option<(String, String)> {
+            (exe == "obs").then(|| ("com.obsproject.studio".into(), "OBS Studio".into()))
+        }
+    }
+
+    // Bug shape: OBS from a launcher was keyed on its desktop id, from a
+    // terminal on its exe, so the Apps screen listed it twice.
     #[test]
-    fn channel_mut_finds_by_name() {
+    fn exe_keyed_identities_fold_into_their_desktop_app() {
+        use crate::persistence::seen::SeenEntry;
+        let seen = |prop: &str, value: &str, last_seen| SeenEntry {
+            match_prop: prop.into(),
+            match_value: value.into(),
+            display_name: "OBS Studio".into(),
+            icon_name: None,
+            icon_path: None,
+            last_seen,
+            ignored: false,
+        };
         let mut state = MixerState::default();
-        state.init_defaults();
-        let chat = state.channel_mut("sink_chat").expect("chat channel exists");
-        chat.volume_percent = 85;
-        assert_eq!(state.channels[1].volume_percent, 85);
-        assert!(state.channel_mut("sink_nope").is_none());
+        state.seen.apps = vec![
+            seen("desktop.id", "com.obsproject.studio", 10),
+            seen("process.exe", "obs", 20),
+            seen("process.exe", "obs-browser-page", 5),
+        ];
+        state
+            .assignments
+            .set("desktop.id", "com.obsproject.studio", "sink_obs_monitor");
+        state.assignments.set("process.exe", "obs", "sink_game");
+        state
+            .assignments
+            .set("process.exe", "obs-browser-page", "sink_browser");
+        state.aliases.set("process.exe", "obs", "OBS");
+
+        let (s, a, al) = state.merge_exe_identities(&OneDesktop);
+        assert!(s && a && al);
+        let obs: Vec<_> = state
+            .seen
+            .apps
+            .iter()
+            .filter(|e| e.match_value == "com.obsproject.studio")
+            .collect();
+        assert_eq!(obs.len(), 1, "one row for OBS");
+        assert_eq!(obs[0].last_seen, 20, "latest sighting kept");
+        assert_eq!(
+            state
+                .assignments
+                .sink_for("desktop.id", "com.obsproject.studio"),
+            Some("sink_obs_monitor"),
+            "the desktop-keyed rule wins"
+        );
+        assert!(state.assignments.sink_for("process.exe", "obs").is_none());
+        // An exe no desktop entry runs is left alone.
+        assert_eq!(
+            state
+                .assignments
+                .sink_for("process.exe", "obs-browser-page"),
+            Some("sink_browser")
+        );
+        assert_eq!(
+            state.aliases.get("desktop.id", "com.obsproject.studio"),
+            Some("OBS")
+        );
+        assert_eq!(
+            state.merge_exe_identities(&OneDesktop),
+            (false, false, false)
+        );
     }
 }

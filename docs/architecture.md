@@ -1,4 +1,4 @@
-# Current architecture and migration boundary
+# Architecture
 
 ## Runtime flow
 
@@ -9,12 +9,10 @@ Tauri commands / tray
       AppState
           │
           ├── MixerState
-          │     ├── legacy channels/buses (compatibility projection)
-          │     └── RoutingModel (new matrix state)
+          │     └── RoutingModel (inputs, mixes, cells: the source of truth)
           │
           └── AudioBackend trait
-                    ├── PipeWireBackend ──► dedicated PipeWire loop thread
-                    └── PactlBackend     ──► fallback subprocess path
+                    └── PipeWireBackend ──► dedicated PipeWire loop thread
 ```
 
 The native backend owns PipeWire objects on one loop thread. Commands must
@@ -28,40 +26,35 @@ Tauri command threads.
 - virtual channel sink creation/destruction
 - bus source/sink creation and membership links
 - per-member send-gain inserts
-- monitor links
 - link policing and external-node healing
 - level/meter registration
-- mic and EQ insert lifetimes
+- per-input Audio FX and per-channel EQ insert lifetimes
 
 The safest next graph change is to extend these link registries rather than
 introduce a second PipeWire loop or userspace audio-copy path.
 
 ## State ownership
 
-The desired direction is:
-
 ```text
-RoutingModel ── source of truth for matrix semantics
+RoutingModel ── the one source of truth: inputs, mixes, every input×mix cell
       │
-      ├── persisted routing.json
-      ├── profile.routing
-      └── compatibility projection into Buses/Channels while migration runs
+      ├── persisted as routing.json (and inside each profile)
+      └── applied to PipeWire only through commands/graph.rs
 ```
 
-When adding a command, update the model first, then apply the corresponding
-backend operation, and make failure recovery refresh the model from Rust.
+A mix's members and send levels are derived from its cells
+(`RoutingModel::members`, `member_gain`); nothing stores them separately.
+When adding a command, update the model, save it, then apply it through
+`commands/graph.rs` (`apply_mix_routes`, `bring_up_mix`, `bring_up`). On a
+refused change the UI refetches the model rather than guessing.
 
 ## Config files
 
-| File | Current purpose |
+| File | Purpose |
 |---|---|
-| `channels.json` | Legacy software-input definitions and source fader state |
-| `buses.json` | Legacy mix definitions and native bus compatibility state |
-| `outputs.json` | Legacy channel output choices/failover |
-| `mic.json` | Existing mic DSP configuration |
-| `eq.json` | Existing channel EQ configuration |
-| `profiles/*.json` | Profiles; now includes optional `routing` |
-| `routing.json` | New input×mix matrix contract |
-
-Keep the legacy files until the graph migration is complete. They are still
-used by older commands, profile compatibility, and the fallback backend.
+| `routing.json` | Inputs, mixes, cells, levels, mutes, Audio FX, mix outputs |
+| `eq.json` | Per-channel parametric EQ |
+| `assignments.json` | App → channel rules |
+| `prefs.json` | Preferences (start minimized, meters) |
+| `profiles/*.json` | Named snapshots: routing model, assignments, EQ, trigger device |
+| `channels.json`, `buses.json`, `outputs.json` | Original Sink layout. Read once to migrate a setup (routing.json version 1 → 2), never written; older profiles carrying them still load |

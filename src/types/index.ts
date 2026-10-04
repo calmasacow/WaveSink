@@ -33,8 +33,6 @@ export interface VirtualSink {
   icon_color?: string | null;
   volume_percent: number;
   muted: boolean;
-  /** Whether this channel feeds the Stream Mix source (OBS recording). */
-  stream_mix: boolean;
 }
 
 export interface OutputDevice {
@@ -42,33 +40,6 @@ export interface OutputDevice {
   name: string;
   description: string;
 }
-
-/** Mirrors Rust MicConfig. */
-export interface MicConfig {
-  enabled: boolean;
-  /** node.name of the hardware mic (null = system default). */
-  input_device: string | null;
-  /** What other apps list the processed mic as. */
-  output_label: string;
-  /** 0-200; 100 = unity. */
-  gain_percent: number;
-  gate_enabled: boolean;
-  comp_enabled: boolean;
-  limiter_enabled: boolean;
-  muted: boolean;
-  gate_threshold_db: number;
-  comp_threshold_db: number;
-  comp_ratio: number;
-  limiter_ceiling_db: number;
-}
-
-/** Default DSP values (markers on the tuning sliders). */
-export const MIC_DSP_DEFAULTS = {
-  gate_threshold_db: -40,
-  comp_threshold_db: -18,
-  comp_ratio: 3,
-  limiter_ceiling_db: -1,
-} as const;
 
 /** Parametric EQ band shapes (mirrors Rust EqBandKind). */
 export type EqBandKind = "peaking" | "low_shelf" | "high_shelf" | "low_pass" | "high_pass";
@@ -128,32 +99,6 @@ export interface SeenApp {
   alias: string | null;
 }
 
-/** A user-defined mix (record bus). The label is what recorders display. */
-/** Where a mix appears to the rest of the system. */
-export type MixRole = "recording" | "playback";
-
-export interface BusDef {
-  name: string;
-  label: string;
-  icon?: string | null;
-  icon_color?: string | null;
-  /** Manual mode: carried channels. Auto-include mode: excluded channels. */
-  channels: string[];
-  /** True = carries everything except `channels`; new channels join automatically. */
-  exclude: boolean;
-  /** Playback level recorders hear (0-150%). Persisted with the mix. */
-  volume_percent: number;
-  /** Muted for recorders (they hear silence). Persisted with the mix. */
-  muted: boolean;
-  /** Whether the processed virtual mic feeds this mix too. Persisted. */
-  mic: boolean;
-  /** Which device list the mix shows up in. Persisted. */
-  role: MixRole;
-  /** Per-member send level within this mix (0-150%); a member absent here
-   *  carries at 100%. Keyed by channel sink name, or "sink_mic". */
-  member_gains: Record<string, number>;
-}
-
 export type InputKind = "software" | "hardware";
 export interface FxChain {
   high_pass_hz: number | null;
@@ -197,7 +142,6 @@ export interface RoutingMix {
   muted: boolean;
   output_bindings: OutputBinding[];
   order: number;
-  role: MixRole;
 }
 export interface RouteCell {
   enabled: boolean;
@@ -209,13 +153,8 @@ export interface RoutingModel {
   inputs: RoutingInput[];
   mixes: RoutingMix[];
   routes: Record<string, Record<string, RouteCell>>;
-  monitor_mix: string | null;
-  hidden_devices: string[];
-}
-
-/** The channels a mix actually carries, given the full channel set. */
-export function busMembers(bus: BusDef, allChannels: string[]): string[] {
-  return bus.exclude ? allChannels.filter((c) => !bus.channels.includes(c)) : bus.channels;
+  /** One input heard alone; `restore` holds every input's earlier mute. */
+  solo?: { input: string; restore: Record<string, boolean> } | null;
 }
 
 /** Profile listing entry; trigger_device auto-loads the profile. */
@@ -227,10 +166,11 @@ export interface ProfileInfo {
 /** Sent as sink_name to unassign a stream (backend moves it to the default sink). */
 export const UNASSIGNED = "";
 
-export const MAX_VOLUME = 150;
-export const MAX_MIC_GAIN = 200;
-/** Levels key for the mic chain. */
-export const MIC_LEVEL_KEY = "sink_mic";
+/** Unity: no level in WaveSink ever amplifies. */
+export const MAX_VOLUME = 100;
+/** Mix output binding that follows the desktop's default output device
+ *  (mirrors Rust SYSTEM_DEFAULT_OUTPUT). */
+export const SYSTEM_DEFAULT_OUTPUT = "@default";
 /** Node name of the always-on master mix (carries every channel). */
 export interface HotkeyShortcut {
   id: string;

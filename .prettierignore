@@ -5,3 +5,6 @@ src-tauri/gen
 package-lock.json
 Cargo.lock
 *.md
+# A .desktop file template: Prettier would parse it as Handlebars HTML and
+# join its key=value lines, which breaks the launcher entry.
+packaging/linux/wavesink.desktop.hbs

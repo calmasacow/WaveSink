@@ -385,572 +385,6 @@ body,
   border: 3px solid var(--bg-main);
 }
 
-.out-pill {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 7px var(--sp-3);
-  border-radius: var(--r-lg);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  color: var(--fg-primary);
-  font-family: inherit;
-  font-size: var(--fs-meta);
-}
-.out-pill:hover {
-  background: var(--bg-surface-hover);
-}
-.out-pill .ms {
-  font-size: 18px;
-  color: var(--fg-secondary);
-}
-.out-pill .ms.chev {
-  margin-left: var(--sp-1);
-  font-size: 16px;
-}
-
-/* ---------- Grouped mixer (Capture | Channels | Mixes) ---------- */
-.mix-scroll {
-  display: flex;
-  align-items: stretch;
-  /* Left-aligned (flex-start): the groups start right after the sidebar
-     with no centering gap, and the board reads the same regardless of how
-     many channels/mixes exist - free space accumulates on the right. */
-  padding: var(--sp-5) var(--sp-6);
-  height: 100%;
-  min-height: 0;
-  overflow-x: auto;
-}
-.mix-group {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.group-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 var(--sp-2) var(--sp-3);
-}
-.group-head .gh-icon {
-  font-size: 15px;
-  color: var(--fg-muted);
-}
-.group-head .gh-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--fg-secondary);
-}
-.group-head .gh-count {
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-}
-.gh-add-wrap {
-  margin-left: auto;
-  position: relative;
-}
-.gh-add {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  transition:
-    background 0.12s,
-    color 0.12s,
-    border-color 0.12s;
-}
-.gh-add:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-.gh-add .ms {
-  font-size: 16px;
-}
-.group-strips {
-  display: flex;
-  gap: var(--sp-3);
-  flex: 1;
-  min-height: 0;
-}
-.group-div {
-  width: 1px;
-  align-self: stretch;
-  background: var(--border);
-  margin: 26px var(--sp-5) var(--sp-4);
-}
-
-@keyframes stripIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.strip {
-  position: relative;
-  width: 132px;
-  flex: 0 0 132px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  padding: var(--sp-4) var(--sp-3) var(--sp-3);
-  transition: border-color 0.12s;
-  animation: stripIn 0.24s ease;
-}
-.strip.muted {
-  opacity: 0.62;
-}
-/* delete ×: corner-anchored, appears on strip hover (design .strip-x) */
-.strip-x {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  z-index: 4;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  border: none;
-  background: var(--bg-active);
-  color: var(--fg-muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  font-family: inherit;
-  opacity: 0;
-  transition:
-    opacity 0.12s,
-    background 0.12s,
-    color 0.12s;
-}
-.strip:hover .strip-x {
-  opacity: 1;
-}
-/* pop-out: the opposite corner, same hover reveal */
-.strip-pop {
-  position: absolute;
-  top: 7px;
-  left: 7px;
-  z-index: 4;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  border: none;
-  background: var(--bg-active);
-  color: var(--fg-muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  font-family: inherit;
-  opacity: 0;
-  transition:
-    opacity 0.12s,
-    background 0.12s,
-    color 0.12s;
-}
-.strip:hover .strip-pop {
-  opacity: 1;
-}
-.strip-pop:hover {
-  background: var(--bg-surface-hover);
-  color: var(--fg-primary);
-}
-.strip-pop .ms {
-  font-size: 13px;
-}
-.strip-x:hover {
-  background: var(--danger);
-  color: #fff;
-}
-.strip-x .ms {
-  font-size: 14px;
-}
-/* drag-reorder grip: mirrors the delete ×, top-left */
-.strip-grip {
-  position: absolute;
-  top: 7px;
-  left: 7px;
-  z-index: 4;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  background: var(--bg-active);
-  color: var(--fg-muted);
-  display: grid;
-  place-items: center;
-  cursor: grab;
-  opacity: 0;
-  transition:
-    opacity 0.12s,
-    background 0.12s,
-    color 0.12s;
-}
-.strip:hover .strip-grip {
-  opacity: 1;
-}
-.strip-grip:hover {
-  background: var(--bg-surface-hover);
-  color: var(--fg-primary);
-}
-.strip-grip:active {
-  cursor: grabbing;
-}
-.strip-grip .ms {
-  font-size: 14px;
-}
-.strip.dragging {
-  opacity: 0.55;
-  border-style: dashed;
-  border-color: var(--accent);
-}
-.strip-name-editable {
-  cursor: text;
-  border-radius: var(--r-xs);
-  padding: 0 4px;
-}
-.strip-name-editable:hover {
-  background: var(--bg-surface-hover);
-}
-.strip-name-input {
-  width: 100%;
-  text-align: center;
-  padding: 4px 6px;
-  font-size: var(--fs-meta);
-}
-
-/* channel membership popover */
-.channel-apps-icon {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: var(--r-xs);
-}
-.channel-apps-icon img {
-  width: 18px;
-  height: 18px;
-}
-.channel-apps-icon .ms {
-  font-size: 16px;
-  color: var(--fg-muted);
-}
-.channel-apps-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.channel-apps-off {
-  margin-left: auto;
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-}
-.channel-apps-eq {
-  margin-left: auto;
-}
-
-.strip-head {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.strip-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-lg);
-  display: grid;
-  place-items: center;
-  background: var(--bg-active);
-  color: var(--fg-secondary);
-}
-.strip-icon .ms {
-  font-size: 22px;
-}
-.strip-name {
-  font-size: var(--fs-title);
-  font-weight: 600;
-  text-align: center;
-}
-.strip-meta {
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-  text-align: center;
-  /* One line: a wrapped chevron reads as a second control. */
-  white-space: nowrap;
-}
-
-.strip-body {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  gap: var(--sp-3);
-  padding: var(--sp-5) 0 var(--sp-4);
-  min-height: 220px;
-}
-
-/* fader */
-.fader {
-  position: relative;
-  width: 44px;
-  display: flex;
-  justify-content: center;
-}
-.fader-track {
-  position: relative;
-  width: 8px;
-  height: 100%;
-  background: var(--bg-active);
-  border-radius: var(--r-pill);
-  cursor: pointer;
-}
-.fader-fill {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--accent);
-  border-radius: var(--r-pill);
-}
-.fader-cap {
-  position: absolute;
-  left: 50%;
-  transform: translate(-50%, 50%);
-  width: 34px;
-  height: 18px;
-  border-radius: var(--r-sm);
-  background: var(--fg-primary);
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  cursor: grab;
-  display: grid;
-  place-items: center;
-}
-.fader-cap::before {
-  content: "";
-  width: 16px;
-  height: 1.5px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 2px;
-  box-shadow:
-    0 3px 0 rgba(0, 0, 0, 0.25),
-    0 -3px 0 rgba(0, 0, 0, 0.25);
-}
-.fader-cap:active {
-  cursor: grabbing;
-}
-
-/* meter */
-.meter {
-  width: 10px;
-  height: 100%;
-  background: var(--bg-main);
-  border-radius: var(--r-pill);
-  overflow: hidden;
-  position: relative;
-  border: 1px solid var(--border);
-}
-.meter-fill {
-  position: absolute;
-  inset: 0;
-  /* Zone colors are fixed to the TRACK and revealed by a clip-path, so
-   * they're calibrated dBFS positions - red can't appear on a quiet bar. */
-  background: linear-gradient(
-    to top,
-    var(--online) 0%,
-    var(--online) 70.8%,
-    var(--warning) 71%,
-    var(--warning) 84%,
-    var(--danger) 84.5%,
-    var(--danger) 100%
-  );
-  border-radius: var(--r-pill);
-  clip-path: inset(100% 0 0 0);
-  transition: clip-path 0.06s linear;
-}
-.meter-peak {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--fg-primary);
-  opacity: 0.8;
-}
-/* −6 dBFS reference tick */
-.meter-tick {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--fg-muted);
-  opacity: 0.5;
-}
-
-/* meter column: clip light above, dBFS readout below */
-.vu-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  height: 100%;
-}
-.vu-col .meter {
-  flex: 1;
-  min-height: 0;
-}
-.vu-clip {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--bg-active);
-  border: 1px solid var(--border);
-  flex: 0 0 auto;
-  transition:
-    background 0.1s,
-    box-shadow 0.1s;
-}
-.vu-clip.on {
-  background: var(--danger);
-  border-color: var(--danger);
-  box-shadow: 0 0 6px rgba(var(--danger-rgb), 0.7);
-}
-.vu-db {
-  flex: 0 0 auto;
-  font-size: 9px;
-  color: var(--fg-muted);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  min-width: 20px;
-  text-align: center;
-}
-
-.strip-readout {
-  text-align: center;
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--fg-primary);
-  margin-bottom: var(--sp-3);
-  /* Typing takes exactly the room reading does, so nothing below moves. */
-  height: 17px;
-  line-height: 17px;
-}
-.strip-readout-editable {
-  cursor: text;
-}
-.strip-readout-input {
-  width: 38px;
-  height: 17px;
-  box-sizing: border-box;
-  padding: 0 2px;
-  vertical-align: top;
-  text-align: center;
-  font-family: inherit;
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--fg-primary);
-  background: var(--bg-main);
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  outline: none;
-}
-.strip-readout .db {
-  color: var(--fg-muted);
-  font-weight: 400;
-  font-size: var(--fs-caption);
-}
-
-.strip-btns {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-.sbtn {
-  flex: 1;
-  min-width: 0;
-  max-width: 44px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-main);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  transition: all 0.12s;
-}
-.sbtn:hover {
-  background: var(--bg-surface-hover);
-  color: var(--fg-primary);
-}
-.sbtn.on-mute {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-}
-.sbtn.on-mon {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-
-.strip-route {
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-  /* uniform footer height so blank (mic/mix) and output-select (channel)
-   * footers keep every strip's divider and controls aligned */
-  height: 31px;
-  box-sizing: border-box;
-}
-.strip-route .ms {
-  font-size: 13px;
-}
-/* clickable variant: the per-strip output picker */
-.strip-route-btn {
-  border-radius: 4px;
-  width: 100%;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 0.12s;
-}
-.strip-route-btn:hover {
-  color: var(--fg-primary);
-}
-.strip-route-name {
-  max-width: 92px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------- Cards / rows (Apps screen) ---------- */
 .section-label {
   font-size: var(--fs-caption);
@@ -1218,96 +652,6 @@ body,
   background: #fff;
 }
 
-/* mic screen */
-.mic-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-.mic-device-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-}
-.mic-device-select {
-  max-width: 420px;
-}
-/* settings: default-device picker shows the current device */
-.device-select {
-  max-width: 340px;
-}
-.device-select-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mic-device-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mic-gain-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-}
-.mic-gain-label {
-  font-size: var(--fs-meta);
-  color: var(--fg-secondary);
-  width: 42px;
-}
-.mic-gain-row .hslider {
-  flex: 1;
-}
-
-/* mini level meter (mic screen) */
-.mini-meter {
-  height: 8px;
-  border-radius: var(--r-pill);
-  background: var(--bg-main);
-  overflow: hidden;
-  position: relative;
-  border: 1px solid var(--border);
-}
-.mini-meter .mf {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: linear-gradient(
-    to right,
-    var(--online),
-    var(--online) 70%,
-    var(--warning) 86%,
-    var(--danger)
-  );
-}
-
-.tag.live {
-  background: rgba(var(--online-rgb), 0.14);
-  color: var(--online);
-}
-
-/* mic input strip accent (design: input-strip) */
-.strip.input-strip {
-  border-color: var(--tint-channel);
-  background: linear-gradient(180deg, var(--tint-channel-wash), var(--bg-surface) 38%);
-}
-.strip-icon-mic {
-  background: var(--accent-light);
-  color: var(--accent-hover);
-}
-
-/* stream mix bus strip (record bus) */
-.strip.bus-strip {
-  border-color: var(--tint-bus);
-  background: linear-gradient(180deg, var(--tint-bus-wash), var(--bg-surface) 38%);
-}
-.strip-icon-bus {
-  background: var(--tint-bus-icon);
-  color: var(--tint-bus-fg);
-}
-
 /* inactive / ignored app history */
 .card-inactive {
   opacity: 0.85;
@@ -1379,12 +723,6 @@ body,
 }
 .menu-item.sel {
   color: var(--accent-hover);
-}
-.menu-item.static {
-  cursor: default;
-}
-.menu-item.static:hover {
-  background: none;
 }
 .menu-item.muted {
   color: var(--fg-muted);
@@ -1537,6 +875,12 @@ body,
   flex-direction: column;
   gap: var(--sp-4);
 }
+/* Children keep their natural height so a tall dialog scrolls instead of
+   squashing its content (a dialog that scrolls a child instead, like the
+   EQ, sets its own rules). */
+.modal > * {
+  flex-shrink: 0;
+}
 .modal.audio-fx-modal {
   --modal-w: 760px;
 }
@@ -1615,12 +959,6 @@ body,
   filter: brightness(1.12);
 }
 
-/* ---------- Icon picker grid ---------- */
-.icon-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: var(--sp-1);
-}
 .icon-color-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -1709,22 +1047,6 @@ body,
   border-color: var(--accent);
   color: var(--accent-hover);
 }
-.matrix-output-select {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 110px;
-  color: var(--accent-hover);
-}
-.matrix-output-select select {
-  width: 82px;
-  min-height: 38px;
-  border: 0;
-  background: transparent;
-  color: var(--accent-hover);
-  font: inherit;
-  font-size: 10px;
-}
 
 /* ---------- Wave board ---------- */
 .wave-board {
@@ -1735,52 +1057,6 @@ body,
   overflow: hidden;
   background: var(--bg-main);
   color: var(--fg-primary);
-}
-.wave-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.wave-monitor {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  color: var(--fg-secondary);
-  font-size: 10px;
-}
-.wave-monitor .ms {
-  color: var(--accent-hover);
-  font-size: 16px;
-}
-.wave-monitor select {
-  max-width: 110px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-primary);
-  font: inherit;
-  outline: 0;
-}
-.wave-primary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 8px;
-  padding: 9px 12px;
-  background: var(--accent);
-  color: var(--on-accent);
-  cursor: pointer;
-  font: 600 11px var(--font-sans);
-}
-.wave-primary:hover {
-  background: var(--accent-hover);
-}
-.wave-primary .ms {
-  font-size: 16px;
 }
 .wave-scroll {
   flex: 1;
@@ -1816,9 +1092,7 @@ body,
 .wave-add-mix,
 .wave-input,
 .wave-send,
-.wave-end-cell,
-.wave-add-input,
-.wave-master {
+.wave-add-input {
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--bg-surface);
@@ -1933,6 +1207,29 @@ body,
   color: var(--fg-secondary);
   cursor: pointer;
 }
+.wave-mix-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.wave-source-slider.wave-mix-level {
+  flex: 1 0 100%;
+  gap: 7px;
+  width: 100%;
+}
+.wave-source-slider.wave-mix-level .meter-wrap {
+  flex: 1;
+  width: auto;
+}
+.wave-source-slider.wave-mix-level input {
+  width: 100%;
+}
+.wave-mix-level span {
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: var(--fg-muted);
+  font-size: 10px;
+  text-align: right;
+}
 .wave-mix-mute:hover {
   background: var(--bg-surface-hover);
   color: var(--fg-primary);
@@ -1987,10 +1284,14 @@ body,
   border: 0;
   padding: 0;
   background: transparent;
-  cursor: default;
+  cursor: pointer;
 }
-.wave-input .channel-svg-icon,
-.wave-legacy-icon {
+/* Soloed: every other input is muted until this one is right-clicked again. */
+.wave-input-icon.soloed .channel-svg-icon {
+  outline: 3px solid var(--online);
+  outline-offset: 1px;
+}
+.wave-input .channel-svg-icon {
   width: 35px;
   height: 35px;
   flex: 0 0 35px;
@@ -1998,15 +1299,6 @@ body,
 }
 .wave-input .channel-svg-icon svg {
   width: 20px;
-}
-.wave-legacy-icon {
-  display: grid;
-  place-items: center;
-  background: var(--bg-active);
-  color: var(--accent-hover);
-}
-.wave-legacy-icon .ms {
-  font-size: 20px;
 }
 .wave-input-copy {
   flex: 1;
@@ -2018,21 +1310,6 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-.wave-meter {
-  width: 100%;
-  height: 3px;
-  margin-top: 4px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: var(--border);
-}
-.wave-meter i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--online), var(--warning), var(--danger));
-  transition: width 0.08s linear;
 }
 .wave-mute,
 .wave-eq {
@@ -2156,11 +1433,19 @@ body,
 .wave-send input::-webkit-slider-runnable-track {
   height: 8px;
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    var(--accent) 0 var(--slider-value, 50%),
-    var(--border) var(--slider-value, 50%) 100%
-  );
+  /* Only the live level fills the track; the knob alone marks the setting.
+     Top to bottom: peak-hold tick; an empty-track cover that uncovers the
+     level colors up to --meter; the level colors. Set per frame by
+     lib/meters. */
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(var(--meter-peak, 0%) - 2px),
+      var(--fg-primary) calc(var(--meter-peak, 0%) - 2px) var(--meter-peak, 0%),
+      transparent var(--meter-peak, 0%)
+    ),
+    linear-gradient(90deg, transparent 0 var(--meter, 0%), var(--border) var(--meter, 0%) 100%),
+    var(--meter-colors);
 }
 .wave-source-slider input::-webkit-slider-thumb,
 .wave-send input::-webkit-slider-thumb {
@@ -2180,12 +1465,6 @@ body,
   border-radius: 999px;
   background: var(--border);
 }
-.wave-source-slider input::-moz-range-progress,
-.wave-send input::-moz-range-progress {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--accent);
-}
 .wave-source-slider input::-moz-range-thumb,
 .wave-send input::-moz-range-thumb {
   width: 8px;
@@ -2199,17 +1478,6 @@ body,
 .wave-send input:disabled {
   cursor: default;
   opacity: 0.1;
-}
-.wave-end-cell {
-  min-height: 48px;
-  display: grid;
-  place-items: center;
-  color: var(--fg-muted);
-  font-size: 9px;
-  text-align: center;
-}
-.wave-end-cell .ms {
-  font-size: 18px;
 }
 .wave-add-input {
   min-height: 48px;
@@ -2272,12 +1540,11 @@ body,
 .audio-fx-btn {
   margin-left: auto;
 }
+/* Not a scroller of its own: a nested one swallowed the wheel and shrank
+   to a sliver, so the dialog itself is the only thing that scrolls. */
 .edit-mix-outputs {
   display: grid;
   gap: 7px;
-  max-height: min(240px, 30vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 9px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2291,60 +1558,9 @@ body,
   font-size: var(--fs-caption);
 }
 @media (max-width: 780px) {
-  .wave-board-head {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 20px;
-  }
-  .wave-head-actions {
-    width: 100%;
-  }
-  .wave-monitor {
-    flex: 1;
-  }
   .wave-scroll {
     padding: 14px;
   }
-}
-.icon-cell {
-  aspect-ratio: 1;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  transition:
-    background 0.12s,
-    color 0.12s,
-    border-color 0.12s;
-}
-.icon-cell .ms {
-  font-size: 19px;
-}
-.icon-cell:hover {
-  background: var(--bg-surface-hover);
-  color: var(--fg-primary);
-}
-.icon-cell.sel {
-  background: var(--accent-light);
-  border-color: var(--accent);
-  color: var(--accent-hover);
-}
-
-/* clickable strip icon (opens the icon picker) */
-.strip-icon-btn {
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  transition:
-    background 0.12s,
-    color 0.12s;
-}
-.strip-icon-btn:hover {
-  background: var(--accent-light);
-  color: var(--accent-hover);
 }
 
 /* error banner */
@@ -2450,21 +1666,6 @@ body,
   opacity: 0.55;
   border-radius: 1px;
   pointer-events: none;
-}
-
-/* greyed status tag (e.g. mic muted) */
-.tag.tag-off {
-  opacity: 0.55;
-}
-.tag.tag-off .ms {
-  color: var(--fg-muted);
-}
-
-/* mic screen body while the chain is switched off: visible but inert */
-.mic-disabled {
-  opacity: 0.45;
-  pointer-events: none;
-  user-select: none;
 }
 
 /* ---------- First-run tutorial ---------- */
@@ -2604,13 +1805,6 @@ body,
   color: var(--fg-muted);
 }
 
-/* divider inside popover menus */
-.menu-div {
-  height: 1px;
-  background: var(--border-popover);
-  margin: var(--sp-1) var(--sp-2);
-}
-
 /* version tag at the bottom of the nav rail */
 .rail-version {
   text-align: center;
@@ -2620,103 +1814,8 @@ body,
   user-select: text;
 }
 
-/* mic screen tip line */
-.mic-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  margin-top: var(--sp-4);
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--r-lg);
-  border: 1px dashed var(--border);
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-}
-.mic-tip .ms {
-  font-size: 16px;
-  color: var(--warning);
-  flex: 0 0 auto;
-}
-.mic-tip a {
-  color: var(--accent-hover);
-}
-
-/* ---------- balance pill (ChatMix, lives in the title bar) ---------- */
-.balance-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 4px var(--sp-2);
-  border-radius: var(--r-pill);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-}
-.bal-side {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    color 0.12s,
-    background 0.12s;
-}
-.bal-side:hover {
-  color: var(--fg-primary);
-  background: var(--bg-surface-hover);
-}
-.bal-side .ms {
-  font-size: 16px;
-}
 /* The hit area is the full title-bar height; the visible line stays 5px,
    so a drag or a double-click to recentre doesn't need pixel aim. */
-.bal-track {
-  position: relative;
-  width: 110px;
-  height: 24px;
-  cursor: pointer;
-}
-.bal-track::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 5px;
-  transform: translateY(-50%);
-  border-radius: var(--r-pill);
-  background: var(--bg-main);
-  border: 1px solid var(--border);
-}
-.bal-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  height: 13px;
-  width: 2px;
-  transform: translate(-50%, -50%);
-  background: var(--fg-muted);
-  opacity: 0.5;
-  border-radius: 1px;
-}
-.bal-cap {
-  position: absolute;
-  top: 50%;
-  width: 11px;
-  height: 11px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--fg-primary);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  transition: left 0.06s linear;
-}
 
 /* A setting that belongs to the one above it. The extra indent leaves the
    elbow room for its arm. */
@@ -2745,12 +1844,6 @@ body,
   pointer-events: none;
 }
 
-/* ---- Parametric EQ modal (eqm-) ---- */
-.sbtn.on-eq {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
 .modal.eqm-modal {
   --modal-w: 860px;
   /* The band list is the scroller, not the panel, so the curve stays put
@@ -2805,10 +1898,6 @@ body,
 }
 .eqm-grid.minor {
   opacity: 0.4;
-}
-.eqm-grid.region {
-  stroke: var(--border);
-  opacity: 0.9;
 }
 .eqm-region {
   fill: var(--bg-surface);
@@ -3261,92 +2350,6 @@ body,
   }
 }
 
-/* ---------- send levels (mix membership popover) ---------- */
-.send-levels-hint {
-  padding: 4px 10px 2px;
-  font-size: var(--fs-caption);
-  color: var(--fg-muted);
-}
-.send-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 3px 10px;
-  color: var(--fg-secondary);
-}
-.send-row-label {
-  font-size: var(--fs-meta);
-  width: 76px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.send-row .hslider {
-  flex: 1;
-}
-.send-row-btn {
-  flex: none;
-  width: 26px;
-  height: 26px;
-}
-.send-row.muted .hslider {
-  opacity: 0.5;
-}
-
-/* ---------- mix send-levels popout window ---------- */
-.popout {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-main);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  overflow: hidden;
-}
-.popout-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-3) 0;
-}
-
-.sbtn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.sbtn:disabled:hover {
-  background: var(--bg-main);
-  border-color: var(--border);
-  color: var(--fg-secondary);
-}
-
-/* Segmented picker (balance step). */
-.seg {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg-active);
-  border-radius: var(--r-sm);
-}
-.seg-btn {
-  min-width: 34px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: var(--r-xs);
-  background: transparent;
-  color: var(--fg-secondary);
-  font: inherit;
-  font-size: var(--fs-caption);
-  cursor: pointer;
-}
-.seg-btn:hover {
-  color: var(--fg-primary);
-}
-.seg-btn.active {
-  background: var(--bg-surface);
-  color: var(--fg-primary);
-}
-
 /* Compact settings rows: one line, the value on the right as a key cap. */
 .row-compact {
   padding: var(--sp-2) var(--sp-4);
@@ -3379,348 +2382,60 @@ body,
 .kbd-btn:hover {
   border-color: var(--accent);
 }
-/* ---------- Wave Link-style routing matrix ---------- */
-.routing-screen {
-  height: 100%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: #151622;
+
+/* Live meters repaint ~30×/s: keep each slider on its own layer so a
+   repaint never spills into the rest of the grid. */
+.meter-slider {
+  contain: layout paint;
+  will-change: transform;
 }
-.routing-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding: 22px 24px 16px;
-  border-bottom: 1px solid var(--line, #292b3c);
+
+/* Meter color zones, from the theme's green/yellow/red. Standard: solid
+   green to 40%, fading to full red at 95%. Pro (-60..0 dBFS): green to
+   -18 dBFS, amber from -12 dBFS, hard red from -3 dBFS. */
+:root {
+  --meter-colors: linear-gradient(
+    90deg,
+    var(--online) 0 40%,
+    var(--warning) 75%,
+    var(--danger) 95% 100%
+  );
 }
-.routing-title {
-  color: #f4f5ff;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+:root[data-meter-scale="pro"] {
+  --meter-colors: linear-gradient(
+    90deg,
+    var(--online) 0 70%,
+    var(--warning) 80% 95%,
+    var(--danger) 95% 100%
+  );
 }
-.routing-subtitle {
-  color: #9295ae;
-  font-size: 12px;
-  margin-top: 5px;
-}
-.routing-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.monitor-picker,
-.matrix-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid #35384d;
-  background: #202235;
-  color: #d8dbef;
-  border-radius: 8px;
-  padding: 9px 11px;
-  font: inherit;
-  font-size: 12px;
-}
-.monitor-picker select {
-  background: transparent;
-  color: #fff;
-  border: 0;
-  outline: 0;
-  font: inherit;
-}
-.monitor-picker option {
-  background: #202235;
-}
-.matrix-device-hint {
-  color: #888ca4;
-  font-size: 11px;
-}
-.matrix-mode {
-  cursor: pointer;
-}
-.matrix-scroll {
-  flex: 1;
-  overflow: auto;
-  padding: 18px 22px 28px;
-}
-.matrix-grid {
-  display: grid;
-  gap: 8px;
-  min-width: 760px;
-  align-content: start;
-}
-.matrix-corner,
-.mix-header,
-.input-header,
-.route-cell,
-.mix-footer,
-.matrix-footer {
-  min-height: 78px;
-  border: 1px solid #2b2e45;
-  background: #1d2031;
-  border-radius: 11px;
-}
-.matrix-corner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  color: #aeb2ca;
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-}
-.matrix-corner span {
-  margin-left: auto;
-  color: #6d718c;
-}
-.mix-header {
+.meter-wrap {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 40px 12px 13px;
-  background: #23263b;
-}
-.mix-header-icon,
-.input-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  color: #cbd1f7;
-  background: #2b2f48;
-  border-radius: 8px;
-  flex: 0 0 auto;
-}
-.mix-header-copy {
+  width: 100%;
   min-width: 0;
 }
-.mix-header-copy strong,
-.input-copy strong {
-  display: block;
-  color: #f2f3ff;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.wave-source-slider .meter-wrap {
+  width: 64px;
 }
-.mix-header-copy small,
-.input-copy small {
-  display: block;
-  color: #858aa8;
-  font-size: 10px;
-  margin-top: 3px;
-}
-.matrix-ear,
-.matrix-more {
+/* Pro: live held peak while hovering a meter. */
+.meter-readout {
+  display: none;
   position: absolute;
-  border: 0;
-  background: transparent;
-  color: #777d99;
-  cursor: pointer;
-}
-.matrix-ear {
-  right: 30px;
-  top: 14px;
-}
-.matrix-more {
-  right: 8px;
-  top: 14px;
-}
-.matrix-ear.active {
-  color: #93a8ff;
-}
-.matrix-row {
-  display: contents;
-}
-.input-header {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 12px;
-  min-width: 0;
-}
-.input-header.muted {
-  background: #3a202e;
-  border-color: #71394e;
-}
-.input-copy {
-  min-width: 90px;
-  flex: 1;
-}
-.input-header > input[type="range"],
-.mix-footer input {
-  width: 108px;
-  accent-color: #aab8ff;
-}
-.input-fx {
-  border: 0;
-  background: #2a2d43;
-  color: #9ea8d8;
-  border-radius: 6px;
-  padding: 5px;
-  cursor: pointer;
-}
-.input-fx.active {
-  color: #fff;
-  background: #5365b4;
-}
-.row-meter {
-  height: 3px;
-  margin-top: 7px;
-  border-radius: 3px;
-  background: #30344a;
-  overflow: hidden;
-}
-.row-meter i {
-  display: block;
-  height: 100%;
-  background: #8fa4ff;
-  border-radius: inherit;
-}
-.route-cell {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 10px;
-  min-width: 0;
-}
-.route-cell.off {
-  opacity: 0.58;
-  background: #191b2a;
-}
-.route-cell.muted {
-  background: #3a202e;
-  border-color: #71394e;
-}
-.route-cell input[type="range"] {
-  min-width: 0;
-  flex: 1;
-  accent-color: #aab8ff;
-}
-.route-cell span {
-  width: 33px;
-  text-align: right;
-  color: #989db8;
-  font-size: 10px;
-}
-.cell-toggle,
-.cell-mute {
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 6px;
-  padding: 6px;
-  color: #8f95b3;
-  background: #292c43;
-  cursor: pointer;
-}
-.cell-toggle {
-  color: #aab8ff;
-}
-.cell-mute.active {
-  color: #ff91ab;
-  background: #54283a;
-}
-.cell-toggle:disabled,
-.cell-mute:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.matrix-footer,
-.mix-footer {
-  min-height: 55px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  color: #9da2bd;
-  font-size: 11px;
-}
-.matrix-footer {
-  border-style: dashed;
-  cursor: pointer;
-}
-.mix-footer span {
-  margin-right: auto;
-}
-.compact-mixer {
-  padding: 24px;
-  overflow: auto;
-}
-.compact-strip {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 15px 16px;
-  margin-bottom: 8px;
-  border-radius: 10px;
-  background: #1d2031;
-  color: #e2e4f2;
-}
-.compact-strip span {
-  min-width: 150px;
-  font-size: 13px;
-}
-.compact-strip input {
-  flex: 1;
-  accent-color: #aab8ff;
-}
-.compact-strip.mix {
-  background: #23263b;
-}
-.fx-drawer {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 5;
-  width: 260px;
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid #414666;
-  border-radius: 12px;
-  background: #202337;
-  box-shadow: 0 14px 40px #080911aa;
-  color: #cfd3e8;
-  font-size: 12px;
-}
-.fx-drawer-head {
-  display: flex;
-  justify-content: space-between;
-  color: #fff;
-  font-size: 14px;
-}
-.fx-drawer-head button {
-  border: 0;
-  background: transparent;
-  color: #9ca2bf;
-  cursor: pointer;
-}
-.fx-drawer label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.fx-drawer input[type="checkbox"] {
-  accent-color: #9daeff;
-}
-.fx-drawer .fx-number input {
-  width: 70px;
-  margin-left: auto;
-  border: 1px solid #3b405b;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 20;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
   border-radius: 5px;
-  background: #161826;
-  color: #fff;
-  padding: 5px;
+  background: var(--bg-surface);
+  color: var(--fg-primary);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
-.fx-drawer small {
-  color: #8d92ab;
-  line-height: 1.45;
+:root[data-meter-scale="pro"] .meter-wrap:hover .meter-readout {
+  display: block;
 }

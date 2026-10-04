@@ -5,7 +5,7 @@ import { defaultEqConfig, MAX_EQ_BANDS } from "../../types";
 import { Modal } from "../Modal";
 import { Ms } from "../Icons";
 import { Toggle } from "../Toggle";
-import { DspSlider } from "../Mic/DspSlider";
+import { DspSlider } from "../DspSlider";
 import { EqBandRow } from "./EqBandRow";
 import { bandColor, EqCurve } from "./EqCurve";
 import { EqPresetMenu } from "./EqPresetMenu";
@@ -20,7 +20,6 @@ interface EqModalProps {
 export function EqModal({ channel, open, onClose }: Readonly<EqModalProps>) {
   const config = useMixerStore((s) => s.eqConfigs[channel.name] ?? null) ?? defaultEqConfig();
   const setChannelEq = useMixerStore((s) => s.setChannelEq);
-  const backendNative = useMixerStore((s) => s.backendNative);
   const [selected, setSelected] = useState(0);
 
   // Surface preset/import failures on the app's global error banner.
@@ -60,11 +59,6 @@ export function EqModal({ channel, open, onClose }: Readonly<EqModalProps>) {
       title={`${channel.label} - Equalizer`}
       className="eqm-modal"
     >
-      {backendNative === false && (
-        <p className="modal-text">
-          Parametric EQ requires the native PipeWire engine, which isn't running on this system.
-        </p>
-      )}
       <div className="eqm-head">
         <div className="eqm-enable">
           <Toggle

@@ -1,6 +1,6 @@
 [package]
 name = "wavesink"
-version = "0.9.5"
+version = "1.0.0"
 description = "Linux-native audio routing and mixing for PipeWire"
 edition = "2021"
 rust-version = "1.88"

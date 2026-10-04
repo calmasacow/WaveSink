@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { gainDb, useMeterConfig } from "../../lib/meters";
 
 interface HSliderProps {
   value: number;
@@ -10,6 +11,7 @@ interface HSliderProps {
 export function HSlider({ value, max, onChange }: Readonly<HSliderProps>) {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const { pro } = useMeterConfig();
 
   const setFromEvent = useCallback(
     (clientX: number) => {
@@ -59,7 +61,7 @@ export function HSlider({ value, max, onChange }: Readonly<HSliderProps>) {
           }}
         />
       </div>
-      <div className="hs-val">{value}%</div>
+      <div className="hs-val">{pro ? gainDb(value) : `${value}%`}</div>
     </div>
   );
 }

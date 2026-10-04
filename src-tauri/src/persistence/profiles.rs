@@ -7,16 +7,18 @@ use crate::audio::types::VirtualSink;
 use crate::error::SinkError;
 use crate::persistence::assignments::Assignments;
 
-/// A named snapshot of the mixer: volumes/mutes, assignments, and output
-/// choices, stored as JSON in `$XDG_CONFIG_HOME/wavesink/profiles/<name>.json`.
+/// A named snapshot of the mixer, stored as JSON in
+/// `$XDG_CONFIG_HOME/wavesink/profiles/<name>.json`: the routing model plus
+/// app assignments and channel EQ.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
-    pub channels: Vec<VirtualSink>,
-    pub assignments: Assignments,
-    /// `serde(default)` keeps older profile files loadable.
+    /// Inputs, mixes, cells, levels and outputs; absent in profiles written
+    /// before the routing model existed.
     #[serde(default)]
-    pub outputs: crate::persistence::outputs::ChannelOutputs,
+    pub routing: crate::routing_model::RoutingModel,
+    #[serde(default)]
+    pub assignments: Assignments,
     /// Per-channel parametric EQ; default keeps older profile files loadable.
     #[serde(default)]
     pub eq: crate::persistence::eq::ChannelEq,
@@ -24,13 +26,66 @@ pub struct Profile {
     /// Sonar-style hardware profile switching.
     #[serde(default)]
     pub trigger_device: Option<String>,
-    /// User-defined mixes (record buses) with their member channels.
-    #[serde(default)]
+    /// The original Sink layout, read from older profiles only to build their
+    /// routing model; never written.
+    #[serde(default, skip_serializing)]
+    pub channels: Vec<VirtualSink>,
+    #[serde(default, skip_serializing)]
     pub buses: crate::persistence::buses::Buses,
-    /// Full input×mix matrix; absent in profiles written before the routing
-    /// model was introduced.
-    #[serde(default)]
-    pub routing: crate::routing_model::RoutingModel,
+    #[serde(default, skip_serializing)]
+    pub outputs: crate::persistence::outputs::ChannelOutputs,
+}
+
+impl Profile {
+    /// The live mixer as a profile.
+    pub fn snapshot(
+        name: &str,
+        mixer: &crate::mixer::state::MixerState,
+        trigger_device: Option<String>,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            routing: mixer.routing.clone(),
+            assignments: mixer.assignments.clone(),
+            eq: mixer.eq.clone(),
+            trigger_device,
+            channels: Vec::new(),
+            buses: Default::default(),
+            outputs: Default::default(),
+        }
+    }
+
+    /// This profile's routing model, built from its original Sink layout
+    /// when it predates the model (see `RoutingModel::load_or_migrate`).
+    fn migrate_routing(&mut self) {
+        use crate::routing_model::{RoutingModel, ROUTING_VERSION};
+        let legacy = || {
+            let channels = crate::persistence::channels::Channels {
+                channels: self
+                    .channels
+                    .iter()
+                    .map(|c| crate::persistence::channels::ChannelDef {
+                        name: c.name.clone(),
+                        label: c.label.clone(),
+                        icon: c.icon.clone(),
+                        icon_color: c.icon_color.clone(),
+                        volume_percent: c.volume_percent,
+                        muted: c.muted,
+                    })
+                    .collect(),
+            };
+            RoutingModel::from_legacy(&channels, &self.buses, &self.outputs)
+        };
+        if self.routing.inputs.is_empty() {
+            self.routing = legacy();
+        } else if self.routing.version < ROUTING_VERSION && !self.channels.is_empty() {
+            let legacy = legacy();
+            self.routing.fold_legacy(&legacy);
+        }
+        self.routing.version = ROUTING_VERSION;
+        self.routing.clamp_levels();
+        self.routing.ensure_an_output();
+    }
 }
 
 /// Listing entry: name plus trigger metadata for the UI/auto-switcher.
@@ -122,8 +177,15 @@ pub fn load(name: &str) -> Result<Profile, SinkError> {
             e.into()
         }
     })?;
-    serde_json::from_str(&raw)
-        .map_err(|e| SinkError::Config(format!("malformed profile {name}: {e}")))
+    let mut profile: Profile = serde_json::from_str(&raw)
+        .map_err(|e| SinkError::Config(format!("malformed profile {name}: {e}")))?;
+    let max = crate::commands::routing::MAX_VOLUME;
+    for channel in &mut profile.channels {
+        channel.volume_percent = channel.volume_percent.min(max);
+    }
+    profile.buses.clamp_loaded();
+    profile.migrate_routing();
+    Ok(profile)
 }
 
 pub fn delete(name: &str) -> Result<(), SinkError> {

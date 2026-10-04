@@ -94,9 +94,8 @@ pub fn export_channel_eq(state: State<'_, AppState>, sink_name: String) -> Resul
     let (config, label) = {
         let mixer = state.lock_mixer()?;
         let label = mixer
-            .channels
-            .iter()
-            .find(|c| c.name == sink_name)
+            .routing
+            .input(&sink_name)
             .map(|c| c.label.clone())
             .unwrap_or_else(|| sink_name.clone());
         (mixer.eq.get(&sink_name), label)

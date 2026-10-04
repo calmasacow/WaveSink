@@ -1,12 +1,10 @@
 use tauri::{AppHandle, Manager};
 
 use crate::hotkeys::{Action, Backend, HotkeyStatus, Hotkeys, ShortcutInfo};
-use crate::persistence::hotkeys::BALANCE_STEPS;
 
 #[tauri::command]
 pub async fn get_hotkeys(app: AppHandle) -> Result<HotkeyStatus, String> {
     let hotkeys = app.state::<Hotkeys>();
-    let config = hotkeys.config();
     let backend = hotkeys.backend();
     let shortcuts: Vec<ShortcutInfo> = match &backend {
         Backend::Portal(handle) => crate::hotkeys::portal::shortcuts(handle).await?,
@@ -16,8 +14,6 @@ pub async fn get_hotkeys(app: AppHandle) -> Result<HotkeyStatus, String> {
     Ok(HotkeyStatus {
         backend: backend.name(),
         shortcuts,
-        balance_step: config.balance_step,
-        steps: BALANCE_STEPS,
     })
 }
 
@@ -43,17 +39,6 @@ pub fn set_hotkey_binding(app: AppHandle, id: String, trigger: String) -> Result
         .update_config(|c| {
             c.bindings.insert(id, trigger);
         })
-        .save()
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn set_balance_step(app: AppHandle, step: u8) -> Result<(), String> {
-    if !BALANCE_STEPS.contains(&step) {
-        return Err(format!("unsupported balance step: {step}"));
-    }
-    app.state::<Hotkeys>()
-        .update_config(|c| c.balance_step = step)
         .save()
         .map_err(|e| e.to_string())
 }

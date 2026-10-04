@@ -1,7 +1,7 @@
 pkgname=wavesink-bin
 pkgver=0.0.0
 pkgrel=1
-pkgdesc="SteelSeries Sonar for Linux - per-app audio routing, mixing, and a processed virtual mic on PipeWire"
+pkgdesc="Per-app audio routing and independent mixes for PipeWire"
 arch=('x86_64')
 url="https://github.com/calmasacow/WaveSink"
 license=('GPL-3.0-only')

@@ -1,3 +1,4 @@
+import { channelIconId } from "./ChannelIcon";
 import type { CSSProperties } from "react";
 
 /** Material Symbol glyph (self-hosted via the material-symbols package). */
@@ -49,8 +50,33 @@ export const CHANNEL_ICONS: Record<string, string> = {
   sink_system: "desktop_windows",
 };
 
+/** The Material Symbols glyph for each bundled channel icon, so places that
+ *  draw a channel's icon with the font (menus, the Apps screen) match the
+ *  bundled SVG the mixer shows. */
+const MATERIAL_FOR_CHANNEL_ICON: Record<ReturnType<typeof channelIconId>, string> = {
+  game: "sports_esports",
+  chat: "chat",
+  music: "music_note",
+  system: "desktop_windows",
+  mic: "mic",
+  broadcast: "podcasts",
+  browser: "web",
+  terminal: "terminal",
+  star: "star",
+  generic: "graphic_eq",
+  headphones: "headphones",
+  public: "public",
+  webcam: "videocam",
+  camera: "photo_camera",
+  forum: "forum",
+};
+
+/** A channel's icon as a Material Symbols glyph name. Stored icons are either
+ *  a bundled id ("music") or an older Material name ("music_note"); both
+ *  resolve through `channelIconId`, so a bundled id never renders as text. */
 export function channelIcon(channel: { name: string; icon?: string | null }): string {
-  return channel.icon ?? CHANNEL_ICONS[channel.name] ?? "graphic_eq";
+  const stored = channel.icon ?? CHANNEL_ICONS[channel.name] ?? null;
+  return MATERIAL_FOR_CHANNEL_ICON[channelIconId(stored)];
 }
 
 /** Curated icon choices for the channel icon picker. */
