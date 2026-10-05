@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           wavesink
-Version:        1.0.1
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Per-app audio routing and independent mixes for PipeWire
 
