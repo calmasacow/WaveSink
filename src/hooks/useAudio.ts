@@ -89,6 +89,19 @@ export function useAudio() {
     };
   }, [fetchRouting]);
 
+  // A stream controller changed levels, mutes or routes over the control
+  // socket. Channel levels live in both views; refetch both.
+  const fetchChannels = useMixerStore((s) => s.fetchChannels);
+  useEffect(() => {
+    const unlisten = listen("control-changed", () => {
+      void fetchChannels();
+      void fetchRouting();
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [fetchChannels, fetchRouting]);
+
   // Hardware profile auto-switch: when a device with a bound profile
   // appears, load that profile (Sonar-style).
   const seenDevices = useRef<Set<string> | null>(null);

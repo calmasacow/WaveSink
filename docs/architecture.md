@@ -3,7 +3,7 @@
 ## Runtime flow
 
 ```text
-Tauri commands / tray
+Tauri commands / tray / control socket
           │
           ▼
       AppState
@@ -47,6 +47,15 @@ A mix's members and send levels are derived from its cells
 When adding a command, update the model, save it, then apply it through
 `commands/graph.rs` (`apply_mix_routes`, `bring_up_mix`, `bring_up`). On a
 refused change the UI refetches the model rather than guessing.
+
+## Control socket
+
+`control/` serves `$XDG_RUNTIME_DIR/wavesink/control.sock` for stream
+controllers ([protocol](control-socket.md)). Its calls run the same `_on`
+command functions as the UI, then emit `control-changed` (or
+`profile-changed`) so the window refetches. A broadcaster pushes the state to
+subscribers whenever it changes, and the level emitter keeps meters running
+while a subscriber wants them, even with the window in the tray.
 
 ## Config files
 

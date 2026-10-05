@@ -1,5 +1,6 @@
 mod audio;
 mod commands;
+mod control;
 mod error;
 mod hotkeys;
 mod mixer;
@@ -157,6 +158,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(hotkeys::Hotkeys::default())
+        .manage(control::Hub::default())
         .invoke_handler(tauri::generate_handler![
             commands::devices::get_virtual_devices,
             commands::devices::get_app_streams,
@@ -246,6 +248,7 @@ pub fn run() {
             spawn_level_emitter(app.handle().clone(), levels);
             persistence::wireplumber::remove_stale();
             spawn_route_enforcer(app.handle().clone());
+            control::start(app.handle().clone());
             Ok(())
         })
         // Close button hides to tray instead of quitting.
@@ -303,12 +306,14 @@ fn spawn_route_enforcer(handle: tauri::AppHandle) {
     });
 }
 
-/// Streams meter peak levels to the UI as `levels` events, at the meter rate.
-/// Peaks are drained (read-and-reset), so silence decays to zero.
+/// Streams meter peak levels to the UI as `levels` events, at the meter rate,
+/// and to control-socket subscribers. Peaks are drained (read-and-reset), so
+/// silence decays to zero; each frame goes to both.
 fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
     std::thread::spawn(move || {
         let mut prev_all_zero = false;
         let mut meters_on: Option<bool> = None;
+        let mut ui_on = true;
         loop {
             // The app's dominant state is sitting in the tray; don't lock the
             // registry, serialize a map, and wake a webview nobody can see.
@@ -320,9 +325,17 @@ fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
                     (shown, w.is_focused().unwrap_or(true))
                 })
                 .unwrap_or((true, true));
-            let fps = meter_fps(onscreen, focused);
+            let ui_fps = meter_fps(onscreen, focused);
+            // A stream controller shows meters whether or not the window is up.
+            let remote = handle.state::<control::Hub>().wants_levels();
+            let fps = if remote {
+                ui_fps.max(control::REMOTE_METER_FPS)
+            } else {
+                ui_fps
+            };
             // Pause the meter streams themselves while hidden (or set off
-            // while unfocused), so metering costs nothing then.
+            // while unfocused) and nobody else is watching, so metering
+            // costs nothing then.
             let active = fps > 0;
             if meters_on != Some(active) {
                 let backend = handle.state::<AppState>().backend.clone();
@@ -335,6 +348,12 @@ fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
                     let _ = handle.emit("levels", HashMap::<String, [f32; 2]>::new());
                 }
             }
+            // Settle the UI's meters when they stop for it but keep running
+            // for a remote surface.
+            if active && ui_fps == 0 && ui_on && onscreen {
+                let _ = handle.emit("levels", HashMap::<String, [f32; 2]>::new());
+            }
+            ui_on = ui_fps > 0;
             if !active {
                 // Force a fresh frame when metering resumes.
                 prev_all_zero = false;
@@ -356,7 +375,10 @@ fn spawn_level_emitter(handle: tauri::AppHandle, levels: Arc<LevelStore>) {
                 continue;
             }
             prev_all_zero = all_zero;
-            if handle.emit("levels", &payload).is_err() {
+            if remote {
+                handle.state::<control::Hub>().publish_levels(&payload);
+            }
+            if ui_fps > 0 && handle.emit("levels", &payload).is_err() {
                 // App is shutting down.
                 break;
             }
