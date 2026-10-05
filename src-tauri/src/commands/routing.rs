@@ -94,17 +94,21 @@ pub fn set_channel_volume(
     sink_name: String,
     volume: u8,
 ) -> Result<(), String> {
+    set_channel_volume_on(&state, &sink_name, volume)
+}
+
+pub fn set_channel_volume_on(state: &AppState, sink_name: &str, volume: u8) -> Result<(), String> {
     // Only our own channels, so a compromised webview can't touch arbitrary
     // session sinks.
-    if !state.lock_mixer()?.routing.is_channel(&sink_name) {
+    if !state.lock_mixer()?.routing.is_channel(sink_name) {
         return Err(format!("unknown channel: {sink_name}"));
     }
     let volume = volume.min(MAX_VOLUME);
     state
         .backend
-        .set_sink_volume(&sink_name, volume)
+        .set_sink_volume(sink_name, volume)
         .map_err(|e| e.to_string())?;
-    set_channel_level(&state, &sink_name, |c| c.volume_percent = volume)
+    set_channel_level(state, sink_name, |c| c.volume_percent = volume)
 }
 
 /// Mute or unmute a channel.
@@ -114,14 +118,18 @@ pub fn toggle_channel_mute(
     sink_name: String,
     muted: bool,
 ) -> Result<(), String> {
-    if !state.lock_mixer()?.routing.is_channel(&sink_name) {
+    set_channel_mute_on(&state, &sink_name, muted)
+}
+
+pub fn set_channel_mute_on(state: &AppState, sink_name: &str, muted: bool) -> Result<(), String> {
+    if !state.lock_mixer()?.routing.is_channel(sink_name) {
         return Err(format!("unknown channel: {sink_name}"));
     }
     state
         .backend
-        .set_sink_mute(&sink_name, muted)
+        .set_sink_mute(sink_name, muted)
         .map_err(|e| e.to_string())?;
-    set_channel_level(&state, &sink_name, |c| c.muted = muted)
+    set_channel_level(state, sink_name, |c| c.muted = muted)
 }
 
 /// Persist a channel's level - it must come back at its last volume and mute

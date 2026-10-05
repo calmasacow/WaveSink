@@ -13,6 +13,8 @@ mod ring;
 mod send_gain;
 mod thread;
 
+pub use input_fx::FX_LEVEL_PREFIX;
+
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

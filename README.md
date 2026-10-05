@@ -43,6 +43,9 @@ routing, levels, and visual identity.
 - **Meters** - live levels inside every slider; optional Pro Audio Metering
   (dBFS scale, dB labels, peak readout) and adjustable meter frame rate
 - **Profiles** - save and switch full layouts from the tray
+- **Stream Deck** - a local [control socket](docs/control-socket.md) lets
+  stream controllers drive levels, mutes, routes, solo and profiles and
+  follow them live; the OpenDeck plugin uses it
 - **Themes** - Original plus all 22 stock Omarchy palettes, available on every
   distro. Omarchy installs can also follow their live desktop palette.
 
