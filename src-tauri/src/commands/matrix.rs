@@ -140,13 +140,36 @@ pub fn set_route_cell(
     send_percent: u8,
     muted: bool,
 ) -> Result<(), String> {
+    set_route_cell_on(
+        &state,
+        &input_id,
+        &mix_id,
+        RouteCell {
+            enabled,
+            send_percent,
+            muted,
+        },
+    )
+}
+
+pub fn set_route_cell_on(
+    state: &AppState,
+    input_id: &str,
+    mix_id: &str,
+    cell: RouteCell,
+) -> Result<(), String> {
+    let RouteCell {
+        enabled,
+        send_percent,
+        muted,
+    } = cell;
     let model = {
         let mut mixer = state.lock_mixer()?;
         mixer
             .routing
             .set_cell(
-                &input_id,
-                &mix_id,
+                input_id,
+                mix_id,
                 RouteCell {
                     enabled,
                     send_percent: send_percent.min(MAX_VOLUME),
@@ -158,18 +181,22 @@ pub fn set_route_cell(
         crate::commands::profiles::autosave_active(&mixer);
         mixer.routing.clone()
     };
-    crate::commands::graph::apply_mix_routes(&state, &model, &mix_id).map_err(|e| e.to_string())
+    crate::commands::graph::apply_mix_routes(state, &model, mix_id).map_err(|e| e.to_string())
 }
 
 /// Solo an input (every other input muted) or, when it already is, un-solo it
 /// and put the earlier mutes back. Bound to right-clicking an input's icon.
 #[tauri::command]
 pub fn toggle_solo(state: State<'_, AppState>, input_id: String) -> Result<(), String> {
+    toggle_solo_on(&state, &input_id)
+}
+
+pub fn toggle_solo_on(state: &AppState, input_id: &str) -> Result<(), String> {
     let (model, changed) = {
         let mut mixer = state.lock_mixer()?;
         let changed = mixer
             .routing
-            .toggle_solo(&input_id)
+            .toggle_solo(input_id)
             .map_err(|e| e.to_string())?;
         mixer.routing.save().map_err(|e| e.to_string())?;
         crate::commands::profiles::autosave_active(&mixer);
@@ -200,6 +227,16 @@ pub fn set_input_level(
     volume_percent: u8,
     muted: bool,
 ) -> Result<(), String> {
+    set_input_level_on(&state, &input_id, volume_percent, muted)
+}
+
+pub fn set_input_level_on(
+    state: &AppState,
+    input_id: &str,
+    volume_percent: u8,
+    muted: bool,
+) -> Result<(), String> {
+    let volume_percent = volume_percent.min(MAX_VOLUME);
     let (source_name, kind) = {
         let mut mixer = state.lock_mixer()?;
         let input = mixer
@@ -208,7 +245,7 @@ pub fn set_input_level(
             .iter_mut()
             .find(|input| input.id == input_id)
             .ok_or_else(|| format!("unknown input {input_id}"))?;
-        input.volume_percent = volume_percent.min(MAX_VOLUME);
+        input.volume_percent = volume_percent;
         input.muted = muted;
         let source_name = input.source_name.clone();
         let kind = input.kind.clone();
@@ -219,7 +256,7 @@ pub fn set_input_level(
     if kind == InputKind::Hardware {
         state
             .backend
-            .set_hardware_input(&input_id, &source_name, volume_percent, muted)
+            .set_hardware_input(input_id, &source_name, volume_percent, muted)
             .map_err(|e| e.to_string())?;
     }
     Ok(())

@@ -113,28 +113,36 @@ pub fn remove_bus_on(state: &AppState, name: String) -> Result<(), String> {
 /// target of `wavesink --set-mix-volume` from the Omarchy audio panel.
 #[tauri::command]
 pub fn set_bus_volume(state: State<'_, AppState>, name: String, volume: u8) -> Result<(), String> {
-    if state.lock_mixer()?.routing.mix(&name).is_none() {
+    set_bus_volume_on(&state, &name, volume)
+}
+
+pub fn set_bus_volume_on(state: &AppState, name: &str, volume: u8) -> Result<(), String> {
+    if state.lock_mixer()?.routing.mix(name).is_none() {
         return Err(format!("unknown mix: {name}"));
     }
     let volume = volume.min(MAX_VOLUME);
     state
         .backend
-        .set_sink_volume(&name, volume)
+        .set_sink_volume(name, volume)
         .map_err(|e| e.to_string())?;
-    edit_mix(&state, &name, |mix| mix.volume_percent = volume)
+    edit_mix(state, name, |mix| mix.volume_percent = volume)
 }
 
 /// Mute or unmute a mix for recorders and its outputs. Persisted.
 #[tauri::command]
 pub fn set_bus_mute(state: State<'_, AppState>, name: String, muted: bool) -> Result<(), String> {
-    if state.lock_mixer()?.routing.mix(&name).is_none() {
+    set_bus_mute_on(&state, &name, muted)
+}
+
+pub fn set_bus_mute_on(state: &AppState, name: &str, muted: bool) -> Result<(), String> {
+    if state.lock_mixer()?.routing.mix(name).is_none() {
         return Err(format!("unknown mix: {name}"));
     }
     state
         .backend
-        .set_sink_mute(&name, muted)
+        .set_sink_mute(name, muted)
         .map_err(|e| e.to_string())?;
-    edit_mix(&state, &name, |mix| mix.muted = muted)
+    edit_mix(state, name, |mix| mix.muted = muted)
 }
 
 #[cfg(test)]
