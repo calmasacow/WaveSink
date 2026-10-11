@@ -269,6 +269,13 @@ jobs:
               sudo apt-get update
               sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
                 xvfb libegl1 libgl1 libgles2
+              # PipeWire comes from the system, never the bundle: the release
+              # strips the bundled libpipewire, and tauri-cli 2.12 stopped
+              # shipping it at all. Noble renamed the package for time_t.
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                libpipewire-0.3-0t64 \
+                || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                  libpipewire-0.3-0
               ;;
           esac
 
