@@ -169,11 +169,20 @@ jobs:
           app=$(ls wavesink_*.AppImage)
           ./"$app" --appimage-extract > /dev/null
           rm -fv squashfs-root/usr/lib/libpipewire-0.3.so*
+          # --appimage-extract leaves every directory 0700 and AppRun.wrapped 0770;
+          # -root-owned below bakes that in, and then no ordinary user can traverse
+          # the payload or exec the wrapper. Restore 0755 dirs / 0644 data.
+          chmod -R u=rwX,go=rX squashfs-root
           offset=$(./"$app" --appimage-offset)
           head -c "$offset" "$app" > runtime
           mksquashfs squashfs-root payload.squashfs -root-owned -noappend -quiet -comp zstd
           cat runtime payload.squashfs > "$app"
           chmod +x "$app"
+          # Everything the runtime mounts must stay readable, and every directory
+          # traversable, for a user who is not root.
+          test -x squashfs-root/AppRun -a -x squashfs-root/AppRun.wrapped
+          [ -z "$(find squashfs-root ! -type l ! -perm -o+r -print -quit)" ]
+          [ -z "$(find squashfs-root -type d ! -perm -o+x -print -quit)" ]
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
