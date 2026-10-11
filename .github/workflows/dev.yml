@@ -196,12 +196,20 @@ jobs:
               librsvg2-dev \
               libpipewire-0.3-dev \
               clang \
-              jq
+              jq \
+              squashfs-tools
           }
           apt_try || { sleep 30; apt_try; } || { sleep 120; apt_try; }
 
       - run: npm ci
       - run: npm run tauri build
+
+      # Same script the release uses, so the artifact tested below is the one
+      # users download, not the raw tauri output.
+      - name: Assemble the AppImage we ship
+        run: |
+          packaging/appimage/repack.sh \
+            "$(find target -path '*/release/bundle/appimage/wavesink_*.AppImage' | head -1)"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -333,6 +341,27 @@ jobs:
           else
             packaging/smoke-test.sh
           fi
+
+      - name: The AppImage explains a missing PipeWire instead of vanishing
+        if: matrix.distro == 'appimage'
+        run: |
+          set -eu
+          app=$(find bundles -name '*.AppImage' | head -1)
+          "$app" --appimage-extract > /dev/null
+          # Point the preflight at a soname that cannot exist: the runner needs
+          # real PipeWire for the launch test above, and hiding a system
+          # library from the loader is more trouble than it is worth.
+          set +e
+          WAVESINK_PIPEWIRE_SONAME=libpipewire-0.3.so.999 \
+            timeout 20 xvfb-run -a ./squashfs-root/AppRun > preflight.log 2>&1
+          rc=$?
+          set -e
+          cat preflight.log
+          grep -q 'PipeWire is not installed' preflight.log
+          # 124 means it was still sitting on the dialog when the timeout fired.
+          # That is the whole point: a window the user can read, not a silent
+          # exit. A clean 0 or 1 would mean no dialog was shown.
+          [ "$rc" -eq 124 ]
 
       - name: Attach the Arch package
         if: matrix.distro == 'arch'

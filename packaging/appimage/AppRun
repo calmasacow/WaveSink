@@ -1,0 +1,24 @@
+#! /usr/bin/env bash
+
+# Replaces the AppRun linuxdeploy generates, which sources its one hook and
+# execs the app. The only addition is the PipeWire preflight below. The release
+# workflow checksums the generated AppRun before swapping this in, so if
+# linuxdeploy ever changes it the build fails instead of quietly shipping a
+# stale copy.
+
+# make sure errors in sourced scripts will cause this script to stop
+set -e
+
+this_dir="$(readlink -f "$(dirname "$0")")"
+
+source "$this_dir"/apprun-hooks/"linuxdeploy-plugin-gtk.sh"
+
+# PipeWire is taken from the system, never bundled (its SPA plugin path is
+# baked in at build time and would be wrong everywhere else). Without it the
+# loader kills wavesink before main(), so the app's own error dialog never
+# runs. Explain it here instead. AppRun.wrapped is what normally puts the
+# bundled libraries on the path, and it has not run yet, so point at them.
+LD_LIBRARY_PATH="$this_dir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  "$this_dir"/usr/bin/wavesink-pipewire-check || exit 1
+
+exec "$this_dir"/AppRun.wrapped "$@"
