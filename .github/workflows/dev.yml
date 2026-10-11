@@ -196,12 +196,20 @@ jobs:
               librsvg2-dev \
               libpipewire-0.3-dev \
               clang \
-              jq
+              jq \
+              squashfs-tools
           }
           apt_try || { sleep 30; apt_try; } || { sleep 120; apt_try; }
 
       - run: npm ci
       - run: npm run tauri build
+
+      # Same script the release uses, so the artifact tested below is the one
+      # users download, not the raw tauri output.
+      - name: Assemble the AppImage we ship
+        run: |
+          packaging/appimage/repack.sh \
+            "$(find target -path '*/release/bundle/appimage/wavesink_*.AppImage' | head -1)"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

@@ -161,44 +161,10 @@ jobs:
           test ! -e /tmp/wavesink-deb-root/usr/share/applications/sink.desktop
           test -e /tmp/wavesink-deb-root/usr/share/applications/wavesink.desktop
 
-      - name: Repack AppImage against system PipeWire
-        # Strip the bundled libpipewire so the loader uses the system one.
+      - name: Assemble the AppImage we ship
         run: |
-          set -euo pipefail
-          cd "$(dirname "$(find target -path '*/release/bundle/appimage/wavesink_*.AppImage' | head -1)")"
-          app=$(ls wavesink_*.AppImage)
-          ./"$app" --appimage-extract > /dev/null
-          rm -fv squashfs-root/usr/lib/libpipewire-0.3.so*
-          # An AppImage has no dependency metadata, so it is the one install
-          # route that can land on a host with no libpipewire. That is fatal in
-          # the loader, before main(), so wavesink's own error dialog never
-          # runs and the app just vanishes. Ship a preflight that explains it.
-          # Our AppRun only adds that call; fail if linuxdeploy's has changed
-          # under us rather than quietly shipping a stale copy of it.
-          echo "eb0b254ac0dae6543e6dd7cd02e1baf40a060de95b927313122d6b46323c00aa  squashfs-root/AppRun" \
-            | sha256sum -c -
-          gcc -O2 -Wall -Wextra -Werror \
-            -o squashfs-root/usr/bin/wavesink-pipewire-check \
-            "$GITHUB_WORKSPACE/packaging/appimage/pipewire-check.c" \
-            $(pkg-config --cflags --libs gtk+-3.0)
-          # It must not link libpipewire, or it would die the same way.
-          ! ldd squashfs-root/usr/bin/wavesink-pipewire-check | grep -q pipewire
-          install -m 755 "$GITHUB_WORKSPACE/packaging/appimage/AppRun" squashfs-root/AppRun
-          # --appimage-extract leaves every directory 0700 and AppRun.wrapped 0770;
-          # -root-owned below bakes that in, and then no ordinary user can traverse
-          # the payload or exec the wrapper. Restore 0755 dirs / 0644 data.
-          chmod -R u=rwX,go=rX squashfs-root
-          offset=$(./"$app" --appimage-offset)
-          head -c "$offset" "$app" > runtime
-          mksquashfs squashfs-root payload.squashfs -root-owned -noappend -quiet -comp zstd
-          cat runtime payload.squashfs > "$app"
-          chmod +x "$app"
-          # Everything the runtime mounts must stay readable, and every directory
-          # traversable, for a user who is not root.
-          test -x squashfs-root/AppRun -a -x squashfs-root/AppRun.wrapped
-          test -x squashfs-root/usr/bin/wavesink-pipewire-check
-          [ -z "$(find squashfs-root ! -type l ! -perm -o+r -print -quit)" ]
-          [ -z "$(find squashfs-root -type d ! -perm -o+x -print -quit)" ]
+          packaging/appimage/repack.sh \
+            "$(find target -path '*/release/bundle/appimage/wavesink_*.AppImage' | head -1)"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
