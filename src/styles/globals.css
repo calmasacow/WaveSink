@@ -159,6 +159,12 @@ body,
 :root[data-omarchy] .window {
   border-radius: 0;
 }
+/* Opaque window (WebKitGTK 2.54+): no see-through corners to round, so square
+   the container and drop the border for an edge-to-edge fill. */
+:root[data-opaque] .window {
+  border: none;
+  border-radius: 0;
+}
 
 /* ---------- Headerbar ---------- */
 .headerbar {
@@ -396,6 +402,11 @@ body,
 }
 .section-label:first-child {
   margin-top: 0;
+}
+/* Each group wraps its own label, which is then a first child with no top
+   margin, so the groups need their gap from the wrapper instead. */
+.app-group + .app-group {
+  margin-top: var(--sp-6);
 }
 .card {
   background: var(--bg-surface);
