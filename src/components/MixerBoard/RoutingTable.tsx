@@ -16,6 +16,7 @@ import { channelIconId, CHANNEL_COLORS, CHANNEL_ICON_IDS, ChannelIcon } from "..
 import { EqModal } from "../Eq/EqModal";
 import { DspSlider } from "../DspSlider";
 import { ToggleRow } from "../Toggle";
+import { ElgatoControls } from "./ElgatoControls";
 
 const blankCell: RouteCell = { enabled: false, send_percent: 100, muted: false };
 
@@ -795,6 +796,7 @@ function InputEditModal({
             </select>
           </label>
         )}
+        {input.kind === "hardware" && source && <ElgatoControls key={source} sourceName={source} />}
         <div className="modal-label">Icon</div>
         <div className="wave-icon-grid">
           {CHANNEL_ICON_IDS.map((entry) => (

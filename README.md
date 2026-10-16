@@ -40,12 +40,18 @@ routing, levels, and visual identity.
 - **Hardware inputs** - add mics and capture devices to the matrix and route
   each independently to any mix, with optional Audio FX (noise gate,
   compressor, limiter) applied before every mix it feeds
+- **Elgato hardware controls** - supported Wave devices expose gain, hardware
+  mute and headphones in the input panel, with confirmed 48 V switching on
+  XLR models. See [supported devices and USB permissions](docs/elgato-hardware.md).
 - **Meters** - live levels inside every slider; optional Pro Audio Metering
   (dBFS scale, dB labels, peak readout) and adjustable meter frame rate
 - **Profiles** - save and switch full layouts from the tray
 - **Stream Deck** - a local [control socket](docs/control-socket.md) lets
   stream controllers drive levels, mutes, routes, solo and profiles and
   follow them live; the OpenDeck plugin uses it
+- **Omarchy audio panel** - an included [bar widget](docs/omarchy-panel.md) follows
+  your profiles, mixes and inputs. Choose which mix controls bar volume; restore
+  your previous panel from Settings. Installed per user on first launch.
 - **Themes** - Original plus all 22 stock Omarchy palettes, available on every
   distro. Omarchy installs can also follow their live desktop palette.
 

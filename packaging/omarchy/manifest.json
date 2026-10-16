@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "wavesink.audio",
+  "name": "WaveSink Audio",
+  "version": "1.0.0",
+  "author": "WaveSink contributors",
+  "description": "Live WaveSink mixes and inputs, controlled by WaveSink",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Panel.qml" },
+  "barWidget": {
+    "displayName": "WaveSink Audio",
+    "description": "Mixes, input levels, mute, and live meters",
+    "category": "Audio",
+    "allowMultiple": false
+  }
+}

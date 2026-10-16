@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use pipewire as pw;
 use pw::core::CoreRc;
@@ -163,6 +164,14 @@ struct NodeEntry {
     muted: bool,
     /// True while the node is in the Running state (actively streaming).
     active: bool,
+    props_ready: bool,
+    appeared: Instant,
+}
+
+struct CaptureFirst {
+    meter: Option<MeterHandle>,
+    started: Instant,
+    ready: bool,
 }
 
 /// Nodes through pipewire-pulse carry few props; pid and sandbox facts live
@@ -210,6 +219,8 @@ struct State {
     meters: HashMap<String, MeterHandle>,
     /// Meters are paused while the window is hidden; new ones start paused.
     meters_paused: bool,
+    /// Exact-device startup quirk; these capture pins outlive window metering.
+    capture_first: HashMap<String, CaptureFirst>,
     /// All known ports, for monitor→output linking.
     ports: HashMap<u32, PortEntry>,
     /// Hardware input id -> its Audio FX settings.
@@ -359,6 +370,7 @@ fn setup_and_run(
                         return;
                     };
                     let name = node.props.get("node.name").cloned().unwrap_or_default();
+                    s.capture_first.remove(&name);
                     if node.media_class == SINK_CLASS {
                         s.adopted_sinks.remove(&name);
                     }
@@ -401,7 +413,11 @@ fn setup_and_run(
                         }
                         // An output device vanished: relink so affected
                         // channels fail over to the default.
-                        None if node.media_class == SINK_CLASS => Heal::Relink,
+                        None if node.media_class == SINK_CLASS
+                            || node.media_class == SOURCE_CLASS =>
+                        {
+                            Heal::Relink
+                        }
                         None => Heal::Nothing,
                     }
                 };
@@ -439,6 +455,43 @@ fn setup_and_run(
     let _recv = receiver.attach(mainloop.loop_(), move |cmd| {
         handle_cmd(&state_c, &registry_c, cmd);
     });
+
+    // First PCM buffer, including silence, proves capture has started. Do not
+    // allocate/send PipeWire commands from the realtime process callback.
+    let state_t = state.clone();
+    let _capture_timer = mainloop.loop_().add_timer(move |_| {
+        let mut changed = false;
+        for (name, pin) in &mut state_t.borrow_mut().capture_first {
+            if pin.ready {
+                continue;
+            }
+            if pin.meter.as_ref().is_some_and(MeterHandle::has_samples) {
+                pin.ready = true;
+                changed = true;
+            } else if pin.started.elapsed() >= Duration::from_secs(2) {
+                eprintln!(
+                    "wavesink: capture-first timed out for {name}; allowing headphone playback"
+                );
+                pin.ready = true;
+                changed = true;
+            }
+        }
+        let waiting_for_source = state_t.borrow().nodes.values().any(|n| {
+            n.media_class == SINK_CLASS
+                && needs_capture_first(&n.props)
+                && n.appeared.elapsed() < Duration::from_millis(2250)
+        });
+        if changed || waiting_for_source {
+            ensure_all_links(&state_t);
+        }
+    });
+    _capture_timer
+        .update_timer(
+            Some(Duration::from_millis(250)),
+            Some(Duration::from_millis(250)),
+        )
+        .into_result()
+        .map_err(|e| SinkError::Config(format!("capture-first timer: {e}")))?;
 
     init_tx
         .send(Ok(()))
@@ -638,7 +691,11 @@ fn on_node(
         .info(move |info| {
             let running = matches!(info.state(), pw::node::NodeState::Running);
             let mut s = state_i.borrow_mut();
+            let mut reconcile = false;
             if let Some(entry) = s.nodes.get_mut(&node_id) {
+                reconcile = !entry.props_ready
+                    && (entry.media_class == SOURCE_CLASS || entry.media_class == SINK_CLASS);
+                entry.props_ready = true;
                 entry.active = running;
                 // Registry globals carry only an abbreviated prop set; the info
                 // event has the full dict.
@@ -647,6 +704,10 @@ fn on_node(
                         entry.props.insert(k.to_string(), v.to_string());
                     }
                 }
+            }
+            drop(s);
+            if reconcile {
+                ensure_all_links(&state_i);
             }
         })
         .param(move |_seq, id, _index, _next, param| {
@@ -682,6 +743,8 @@ fn on_node(
         channels: 2,
         muted: false,
         active: false,
+        props_ready: false,
+        appeared: Instant::now(),
     };
 
     let mut s = state.borrow_mut();
@@ -1044,6 +1107,107 @@ fn ensure_input_fx(core: &CoreRc, s: &mut State, node_ids: &HashMap<String, u32>
     }
 }
 
+fn alsa_card(props: &HashMap<String, String>) -> Option<&str> {
+    props
+        .get("api.alsa.pcm.card")
+        .or_else(|| props.get("alsa.card"))
+        .map(String::as_str)
+}
+
+fn needs_capture_first(props: &HashMap<String, String>) -> bool {
+    // ponytail: startup order was physically reproduced only on 0fd9:00a6.
+    // Extend this match only after capture/playback-order tests on another PID.
+    props.get("device.api").is_some_and(|v| v == "alsa")
+        && props.get("alsa.components").is_some_and(|v| {
+            v.split_whitespace()
+                .any(|c| c.eq_ignore_ascii_case("USB0fd9:00a6"))
+        })
+}
+
+fn ensure_capture_first(
+    core: &CoreRc,
+    s: &mut State,
+    node_ids: &HashMap<String, u32>,
+    default_output: Option<u32>,
+) {
+    let output_cards: std::collections::HashSet<String> = s
+        .mix_outputs
+        .values()
+        .flatten()
+        .filter_map(|name| {
+            let id = if name == crate::routing_model::SYSTEM_DEFAULT_OUTPUT {
+                default_output
+            } else {
+                node_ids.get(name).copied()
+            }?;
+            alsa_card(&s.nodes.get(&id)?.props).map(str::to_owned)
+        })
+        .collect();
+    let wanted: HashMap<String, u32> = s
+        .nodes
+        .values()
+        .filter(|n| n.media_class == SOURCE_CLASS && needs_capture_first(&n.props))
+        .filter_map(|n| {
+            let name = n.props.get("node.name")?;
+            let used = s
+                .hardware_inputs
+                .values()
+                .any(|(source, _, _)| source == name)
+                || alsa_card(&n.props).is_some_and(|card| output_cards.contains(card));
+            used.then(|| (name.clone(), n.id))
+        })
+        .collect();
+    s.capture_first.retain(|name, _| wanted.contains_key(name));
+    let Some(levels) = s.levels.clone() else {
+        return;
+    };
+    for (name, id) in wanted {
+        s.capture_first.entry(name.clone()).or_insert_with(|| {
+            let meter = match MeterHandle::capture_pin(core, &name, id, levels.clone()) {
+                Ok(meter) => Some(meter),
+                Err(e) => {
+                    eprintln!("wavesink: capture-first unavailable for {name}: {e}");
+                    None
+                }
+            };
+            CaptureFirst {
+                ready: meter.is_none(),
+                meter,
+                started: Instant::now(),
+            }
+        });
+    }
+}
+
+fn capture_first_output_ready(s: &State, id: u32) -> bool {
+    let Some(output) = s.nodes.get(&id) else {
+        return false;
+    };
+    // Full ALSA properties arrive with node.info, after the registry global.
+    if !output.props_ready {
+        return false;
+    }
+    if !needs_capture_first(&output.props) {
+        return true;
+    }
+    let card = alsa_card(&output.props);
+    let source_present = card.is_some()
+        && s.nodes
+            .values()
+            .any(|n| n.media_class == SOURCE_CLASS && n.props_ready && alsa_card(&n.props) == card);
+    if !source_present {
+        // Duplex nodes may be announced sink-first. An output-only profile
+        // still gets playback after a bounded wait, without changing profiles.
+        return output.appeared.elapsed() >= Duration::from_secs(2);
+    }
+    s.capture_first.iter().all(|(source, pin)| {
+        let same_card = s
+            .node_by_name(source)
+            .is_some_and(|n| card.is_some() && alsa_card(&n.props) == card);
+        !same_card || pin.ready
+    })
+}
+
 /// Reconcile loopback links for every virtual channel: monitor -> chosen output
 /// device (failover to default) and monitor -> Stream Mix. Idempotent.
 fn ensure_all_links(state: &Rc<RefCell<State>>) {
@@ -1082,6 +1246,8 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
         .and_then(|name| node_ids.get(name))
         .copied()
         .or_else(|| fallback_sink(&s));
+
+    ensure_capture_first(&core, &mut s, &node_ids, default_output);
 
     // The link plan for every live EQ insert, rebuilt each pass - the link
     // police destroys anything an EQ playback node feeds that isn't in here.
@@ -1200,6 +1366,7 @@ fn ensure_all_links(state: &Rc<RefCell<State>>) {
             } else {
                 node_ids.get(&output_name).copied()
             }
+            .filter(|id| capture_first_output_ready(&s, *id))
             .filter(|id| linked.insert(*id));
             let pairs = target
                 .map(|target| desired_pairs(&s, mix_id, target))
@@ -1406,6 +1573,11 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                 })
                 .map(|n| OutputDevice {
                     index: n.id,
+                    alsa_card: n
+                        .props
+                        .get("api.alsa.pcm.card")
+                        .or_else(|| n.props.get("alsa.card"))
+                        .and_then(|v| v.parse().ok()),
                     name: n.props.get("node.name").cloned().unwrap_or_default(),
                     description: n
                         .props
@@ -1687,6 +1859,11 @@ fn handle_cmd(state: &Rc<RefCell<State>>, registry: &RegistryRc, cmd: Cmd) {
                 .filter(|n| n.media_class == SOURCE_CLASS || n.media_class == VIRTUAL_SOURCE_CLASS)
                 .map(|n| OutputDevice {
                     index: n.id,
+                    alsa_card: n
+                        .props
+                        .get("api.alsa.pcm.card")
+                        .or_else(|| n.props.get("alsa.card"))
+                        .and_then(|v| v.parse().ok()),
                     name: n.props.get("node.name").cloned().unwrap_or_default(),
                     description: n
                         .props
@@ -1921,6 +2098,187 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn capture_first_quirk_is_exact_device_only() {
+        for (component, expected) in [
+            ("USB0fd9:00a6", true),
+            ("USB0fd9:007d", false),
+            ("USB0fd9:0070", false),
+            ("USB0fd9:00c7", false),
+            ("USB1234:00a6", false),
+        ] {
+            assert_eq!(
+                needs_capture_first(&kv(&[
+                    ("device.api", "alsa"),
+                    ("alsa.components", component)
+                ])),
+                expected
+            );
+        }
+        assert!(!needs_capture_first(&kv(&[(
+            "alsa.components",
+            "USB0fd9:00a6"
+        )])));
+    }
+
+    #[test]
+    #[ignore = "Run scripts/test-elgato-startup.py; requires a private PipeWire server"]
+    fn isolated_capture_first() {
+        use crate::audio::{backend::AudioBackend, pw_native::PipeWireBackend};
+        assert_eq!(
+            std::env::var("PIPEWIRE_REMOTE").unwrap(),
+            "wavesink-elgato-test"
+        );
+        assert!(std::env::var("XDG_RUNTIME_DIR")
+            .unwrap()
+            .starts_with("/tmp/wavesink-elgato-"));
+        let backend = PipeWireBackend::new().unwrap();
+        let source = "wavesink-test-dock-source";
+        let output = "wavesink-test-dock-output";
+        backend.create_bus("sink_bus_test", "Test").unwrap();
+        backend
+            .set_hardware_input("test-mic", source, 100, false)
+            .unwrap();
+        backend
+            .set_bus_members("sink_bus_test", &["test-mic".into()])
+            .unwrap();
+        backend
+            .set_mix_outputs(
+                "sink_bus_test",
+                &[crate::routing_model::OutputBinding {
+                    device: output.into(),
+                    enabled: true,
+                }],
+            )
+            .unwrap();
+        let snapshot = || -> serde_json::Value {
+            let dump = std::process::Command::new("pw-dump").output().unwrap();
+            assert!(dump.status.success());
+            serde_json::from_slice(&dump.stdout).unwrap()
+        };
+        let wait = |running: bool| {
+            let until = Instant::now() + Duration::from_secs(5);
+            loop {
+                let dump = snapshot();
+                let pin = dump.as_array().unwrap().iter().find(|o| {
+                    o["info"]["props"]["node.name"] == format!("sink-internal-capture-pin-{source}")
+                });
+                let objects = dump.as_array().unwrap();
+                let output_id = objects
+                    .iter()
+                    .find(|o| o["info"]["props"]["node.name"] == output)
+                    .map(|o| &o["id"]);
+                let bus_id = objects
+                    .iter()
+                    .find(|o| o["info"]["props"]["node.name"] == "sink_bus_test")
+                    .map(|o| &o["id"]);
+                let headphones = objects.iter().any(|o| {
+                    o["type"] == "PipeWire:Interface:Link"
+                        && Some(&o["info"]["input-node-id"]) == output_id
+                        && Some(&o["info"]["output-node-id"]) == bus_id
+                        && o["info"]["state"] == "active"
+                });
+                if headphones {
+                    assert!(
+                        pin.is_some_and(|p| p["info"]["state"] == "running"),
+                        "headphones started before capture"
+                    );
+                }
+                if running && headphones && pin.is_some_and(|p| p["info"]["state"] == "running")
+                    || !running && pin.is_none()
+                {
+                    break;
+                }
+                if Instant::now() >= until {
+                    for o in dump.as_array().unwrap() {
+                        if o["type"] == "PipeWire:Interface:Node"
+                            || o["type"] == "PipeWire:Interface:Link"
+                        {
+                            eprintln!(
+                                "{} {} state={} error={} props={}",
+                                o["id"],
+                                o["type"],
+                                o["info"]["state"],
+                                o["info"]["error"],
+                                o["info"]["props"]
+                            );
+                        }
+                    }
+                    panic!("capture pin did not reach expected state");
+                }
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        };
+        wait(true);
+        // Gate recreation must not restore a stale session-manager mute/volume.
+        for _ in 0..2 {
+            backend
+                .set_input_fx(
+                    "test-mic",
+                    &crate::routing_model::FxChain {
+                        gate_enabled: true,
+                        gate_threshold_db: -100.0,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(500));
+            let slot = backend.levels.slot_for("sink_bus_test").unwrap();
+            backend.levels.drain(slot, 0);
+            backend.levels.drain(slot, 1);
+            std::thread::sleep(Duration::from_millis(250));
+            let peak = backend
+                .levels
+                .drain(slot, 0)
+                .max(backend.levels.drain(slot, 1));
+            assert!(
+                peak > 0.01,
+                "FX mix silenced by restored stream properties: {peak}"
+            );
+            backend
+                .set_input_fx("test-mic", &Default::default())
+                .unwrap();
+        }
+        backend.set_meters_active(false).unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        wait(true);
+        // Headphone playback also needs the pin, even after removing the matrix mic.
+        backend.remove_hardware_input("test-mic").unwrap();
+        wait(true);
+        // Replug both virtual endpoints, announcing playback first.
+        let dump = snapshot();
+        for name in [source, output] {
+            let id = dump
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["info"]["props"]["node.name"] == name)
+                .unwrap()["id"]
+                .to_string();
+            assert!(std::process::Command::new("pw-cli")
+                .args(["destroy", &id])
+                .status()
+                .unwrap()
+                .success());
+        }
+        for (name, factory, class) in [
+            (output, "support.null-audio-sink", "Audio/Sink"),
+            (source, "audiotestsrc", "Audio/Source"),
+        ] {
+            let props = format!(
+                r#"{{ factory.name = {factory} object.linger = true node.name = {name} media.class = {class} audio.position = [ FL FR ] device.api = alsa api.alsa.pcm.card = 99999 alsa.components = "USB0fd9:00a6" }}"#
+            );
+            assert!(std::process::Command::new("pw-cli")
+                .args(["create-node", "adapter", &props])
+                .status()
+                .unwrap()
+                .success());
+        }
+        wait(true);
+        backend.set_mix_outputs("sink_bus_test", &[]).unwrap();
+        wait(false);
     }
 
     #[test]

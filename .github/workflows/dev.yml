@@ -119,6 +119,7 @@ jobs:
               libayatana-appindicator3-dev \
               librsvg2-dev \
               libpipewire-0.3-dev \
+              libusb-1.0-0-dev \
               clang
           }
           apt_try || { sleep 30; apt_try; } || { sleep 120; apt_try; }
@@ -128,6 +129,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: python3 packaging/omarchy/check.py
+      - run: node packaging/omarchy/check-model.cjs
       - run: python3 scripts/install/test-installers.py
       - run: bash -n scripts/install/*.sh
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
@@ -195,6 +198,7 @@ jobs:
               libayatana-appindicator3-dev \
               librsvg2-dev \
               libpipewire-0.3-dev \
+              libusb-1.0-0-dev \
               clang \
               jq \
               squashfs-tools
