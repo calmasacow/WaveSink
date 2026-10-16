@@ -3,6 +3,7 @@
 //! them into the shared `LevelStore`.
 
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use pipewire as pw;
@@ -17,11 +18,13 @@ use crate::error::SinkError;
 pub struct MeterHandle {
     stream: pw::stream::StreamRc,
     _listener: pw::stream::StreamListener<MeterCtx>,
+    received: Arc<AtomicBool>,
 }
 
 struct MeterCtx {
     slot: usize,
     levels: Arc<LevelStore>,
+    received: Arc<AtomicBool>,
 }
 
 impl MeterHandle {
@@ -34,6 +37,31 @@ impl MeterHandle {
         levels: Arc<LevelStore>,
         capture_sink: bool,
     ) -> Result<Self, SinkError> {
+        Self::connect(core, sink_name, sink_id, levels, capture_sink, false)
+    }
+
+    /// Keep capture active even when the window and ordinary meters are paused.
+    pub fn capture_pin(
+        core: &pw::core::CoreRc,
+        name: &str,
+        id: u32,
+        levels: Arc<LevelStore>,
+    ) -> Result<Self, SinkError> {
+        Self::connect(core, name, id, levels, false, true)
+    }
+
+    pub fn has_samples(&self) -> bool {
+        self.received.load(Ordering::Acquire)
+    }
+
+    fn connect(
+        core: &pw::core::CoreRc,
+        sink_name: &str,
+        sink_id: u32,
+        levels: Arc<LevelStore>,
+        capture_sink: bool,
+        pin: bool,
+    ) -> Result<Self, SinkError> {
         let slot = levels
             .slot_for(sink_name)
             .ok_or_else(|| SinkError::Config(format!("meter budget exhausted for {sink_name}")))?;
@@ -43,20 +71,25 @@ impl MeterHandle {
         let props = pw::properties::properties! {
             "media.type" => "Audio",
             "media.category" => "Capture",
-            "node.name" => format!("{METER_PREFIX}{sink_name}"),
+            "node.name" => if pin { format!("sink-internal-capture-pin-{sink_name}") } else { format!("{METER_PREFIX}{sink_name}") },
             // For sinks: capture the monitor, don't keep the sink busy.
             "stream.capture.sink" => if capture_sink { "true" } else { "false" },
             // Pin the meter to its channel - without an explicit target,
             // WirePlumber may move it to a newly selected default device.
             "target.object" => sink_name,
             "node.dont-reconnect" => "true",
-            "node.passive" => "true",
+            "node.passive" => if pin { "false" } else { "true" },
         };
         let stream = pw::stream::StreamRc::new(core.clone(), "sink-meter", props)
             .map_err(|e| err("stream", e))?;
 
+        let received = Arc::new(AtomicBool::new(false));
         let listener = stream
-            .add_local_listener_with_user_data(MeterCtx { slot, levels })
+            .add_local_listener_with_user_data(MeterCtx {
+                slot,
+                levels,
+                received: received.clone(),
+            })
             .process(|stream, ctx| {
                 let Some(mut buffer) = stream.dequeue_buffer() else {
                     return;
@@ -83,6 +116,9 @@ impl MeterHandle {
                 }
                 ctx.levels.raise(ctx.slot, 0, peaks[0]);
                 ctx.levels.raise(ctx.slot, 1, peaks[1]);
+                if valid.min(bytes.len()) >= 4 {
+                    ctx.received.store(true, Ordering::Release);
+                }
             })
             .register()
             .map_err(|e| err("listener", e))?;
@@ -120,6 +156,7 @@ impl MeterHandle {
         Ok(Self {
             stream,
             _listener: listener,
+            received,
         })
     }
 

@@ -4,6 +4,7 @@ mod control;
 mod error;
 mod hotkeys;
 mod mixer;
+mod omarchy;
 mod persistence;
 pub(crate) mod routing_model;
 mod state;
@@ -121,6 +122,22 @@ fn show_engine_error(detail: &str) {
 }
 
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(at) = args.iter().position(|a| a == "--omarchy-panel") {
+        let action = args.get(at + 1).map(String::as_str).unwrap_or("");
+        if !matches!(action, "install" | "remove" | "status") {
+            eprintln!("Usage: wavesink --omarchy-panel install|remove|status");
+            std::process::exit(2);
+        }
+        match omarchy::configure(action, false) {
+            Ok(status) => println!("{status}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     // WaveSink is a PipeWire graph; without it there is nothing to run. At
     // login PipeWire can still be starting, so give it a few seconds.
     let backend = match connect_pipewire() {
@@ -209,6 +226,8 @@ pub fn run() {
             commands::routing::set_app_volume,
             commands::routing::rename_app,
             commands::devices::get_input_devices,
+            commands::elgato::get_elgato_controls,
+            commands::elgato::set_elgato_control,
             commands::eq::get_channel_eq_configs,
             commands::eq::set_channel_eq,
             commands::eq::list_eq_presets,
@@ -225,6 +244,8 @@ pub fn run() {
             commands::profiles::create_blank_profile,
             commands::profiles::get_active_profile,
             commands::settings::get_omarchy_theme,
+            omarchy::get_omarchy_panel,
+            omarchy::set_omarchy_panel,
             commands::settings::get_autostart,
             commands::settings::set_autostart,
             commands::settings::get_prefs,
@@ -261,6 +282,9 @@ pub fn run() {
             persistence::wireplumber::remove_stale();
             spawn_route_enforcer(app.handle().clone());
             control::start(app.handle().clone());
+            if let Err(error) = omarchy::configure("install", true) {
+                eprintln!("wavesink: Omarchy panel setup: {error}");
+            }
             Ok(())
         })
         // Close button hides to tray instead of quitting.

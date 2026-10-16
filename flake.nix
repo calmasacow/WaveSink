@@ -13,7 +13,7 @@
           url = "https://github.com/calmasacow/WaveSink/releases/download/v${version}/wavesink_${version}_amd64.AppImage";
           hash = "sha256-h3rRNa3qR0fBbA2xT9uIhGkayZmm1Jf1IDCnZQQzbyM=";
         };
-        extraPkgs = pkgs: [ pkgs.pipewire ];
+        extraPkgs = pkgs: [ pkgs.pipewire pkgs.libusb1 ];
       };
     };
 }

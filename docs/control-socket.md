@@ -28,6 +28,8 @@ echoed as given, or `null` when it's missing. Requests on one connection run in 
 |---|---|---|
 | `hello` | | `{app, version, protocol}` |
 | `get_state` | | the [snapshot](#snapshot) |
+| `get_devices` | | current capture/output device lists; excludes WaveSink mixes |
+| `set_bar_mix` | `mix` ID or null | persist Omarchy bar volume target for current profile; null clears it |
 | `subscribe` | `state` (default true), `levels` (default false) | the first `state` event arrives before the reply |
 | `set_input_volume` | `input`, `volume` 0-100 | |
 | `adjust_input_volume` | `input`, `delta` | clamped to 0-100 |
@@ -74,7 +76,9 @@ any client wants them, even with the window in the tray.
   ],
   "solo": null,
   "profiles": ["Default", "Gaming"],
-  "active_profile": "Default"
+  "active_profile": "Default",
+  "bar_mix": null,
+  "meter_pro": false
 }
 ```
 

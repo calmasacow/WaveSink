@@ -43,6 +43,9 @@ pub struct Prefs {
     pub meter_fps: u8,
     #[serde(default)]
     pub meter_unfocused: MeterUnfocused,
+    /// User-selected bar volume target per profile. Never guess a mix by name.
+    #[serde(default)]
+    pub omarchy_bar_mixes: std::collections::BTreeMap<String, String>,
 }
 
 fn default_meter_fps() -> u8 {
@@ -57,6 +60,7 @@ impl Default for Prefs {
             meter_pro: false,
             meter_fps: default_meter_fps(),
             meter_unfocused: MeterUnfocused::default(),
+            omarchy_bar_mixes: Default::default(),
         }
     }
 }

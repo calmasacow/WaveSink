@@ -179,6 +179,8 @@ impl InputFxHandle {
                 "node.name" => capture_name.as_str(),
                 "target.object" => source_name,
                 "node.dont-reconnect" => "true",
+                // Routing owns gain/mute; stale desktop stream state must not alter DSP.
+                "state.restore-props" => "false",
             },
         )
         .map_err(|e| err("capture stream", e))?;
@@ -267,6 +269,7 @@ impl InputFxHandle {
                 "node.name" => playback_name.as_str(),
                 "node.autoconnect" => "false",
                 "node.dont-reconnect" => "true",
+                "state.restore-props" => "false",
             },
         )
         .map_err(|e| err("playback stream", e))?;

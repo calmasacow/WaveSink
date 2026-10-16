@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod elgato;
 pub mod eq_import;
 pub mod icons;
 pub mod identity;

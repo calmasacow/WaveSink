@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           wavesink
-Version:        1.1.2
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Per-app audio routing and independent mixes for PipeWire
 
@@ -52,6 +52,7 @@ mkdir -p %{buildroot}%{_prefix}
 cp -a usr/. %{buildroot}%{_prefix}/
 
 %files
+%{_prefix}/lib/udev/rules.d/70-wavesink-elgato.rules
 %{_bindir}/wavesink
 %{_datadir}/applications/wavesink.desktop
 # Hidden entry the desktop portal files the global shortcuts under.

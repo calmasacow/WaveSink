@@ -8,7 +8,7 @@ license=('GPL-3.0-only')
 # Direct library deps plus the tray library: libayatana-appindicator is
 # dlopen'd, but the app aborts on startup without it, so it's a hard dep.
 depends=('glibc' 'libgcc' 'glib2' 'gtk3' 'gdk-pixbuf2' 'cairo' 'dbus'
-         'webkit2gtk-4.1' 'libsoup3' 'libpipewire' 'pipewire-pulse'
+         'webkit2gtk-4.1' 'libsoup3' 'libpipewire' 'libusb' 'pipewire-pulse'
          'wireplumber' 'hicolor-icon-theme' 'libayatana-appindicator')
 provides=('wavesink' 'sink')
 conflicts=('wavesink' 'sink' 'sink-bin')

@@ -339,6 +339,8 @@ pub struct OutputDevice {
     pub index: u32,
     pub name: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alsa_card: Option<u32>,
 }
 
 /// A config value clamped to its range, or the default when it is not a

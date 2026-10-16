@@ -70,6 +70,7 @@ jobs:
               libayatana-appindicator3-dev \
               librsvg2-dev \
               libpipewire-0.3-dev \
+              libusb-1.0-0-dev \
               clang \
               squashfs-tools \
               zstd \
@@ -139,6 +140,8 @@ jobs:
         run: |
           npm run build
           npm test
+          python3 packaging/omarchy/check.py
+          node packaging/omarchy/check-model.cjs
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path src-tauri/Cargo.toml
 

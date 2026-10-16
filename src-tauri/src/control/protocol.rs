@@ -29,6 +29,10 @@ pub const MAX_LINE: u64 = 64 * 1024;
 pub enum Call {
     Hello {},
     GetState {},
+    GetDevices {},
+    SetBarMix {
+        mix: Option<String>,
+    },
     Subscribe {
         #[serde(default = "yes")]
         state: bool,
@@ -215,6 +219,8 @@ pub struct Snapshot {
     pub solo: Option<String>,
     pub profiles: Vec<String>,
     pub active_profile: Option<String>,
+    pub bar_mix: Option<String>,
+    pub meter_pro: bool,
 }
 
 impl Snapshot {
@@ -268,6 +274,8 @@ impl Snapshot {
             solo: model.solo.as_ref().map(|s| s.input.clone()),
             profiles,
             active_profile: active,
+            bar_mix: None,
+            meter_pro: false,
         }
     }
 
@@ -279,11 +287,15 @@ impl Snapshot {
             None => profile_names()?,
         };
         let mixer = state.lock_mixer()?;
-        Ok(Self::build(
-            &mixer.routing,
-            profiles,
-            mixer.active_profile.clone(),
-        ))
+        let mut snapshot = Self::build(&mixer.routing, profiles, mixer.active_profile.clone());
+        snapshot.meter_pro = mixer.prefs.meter_pro;
+        snapshot.bar_mix = mixer
+            .prefs
+            .omarchy_bar_mixes
+            .get(mixer.active_profile.as_deref().unwrap_or(""))
+            .filter(|id| mixer.routing.mix(id).is_some())
+            .cloned();
+        Ok(snapshot)
     }
 }
 
@@ -422,6 +434,51 @@ pub fn dispatch(state: &AppState, call: Call) -> Result<(Value, Effect), String>
             ))
         }
         Call::Subscribe { state, levels } => done(Effect::Subscribe { state, levels }),
+        Call::GetDevices {} => {
+            let inputs = state
+                .backend
+                .list_input_devices()
+                .map_err(|e| e.to_string())?;
+            let outputs = state
+                .backend
+                .list_output_devices()
+                .map_err(|e| e.to_string())?;
+            let mixer = state.lock_mixer()?;
+            let inputs: Vec<_> = inputs
+                .into_iter()
+                .filter(|d| {
+                    !mixer
+                        .routing
+                        .inputs
+                        .iter()
+                        .any(|i| i.kind == InputKind::Software && i.id == d.name)
+                        && mixer.routing.mix(&d.name).is_none()
+                })
+                .collect();
+            Ok((
+                serde_json::json!({"inputs": inputs, "outputs": outputs}),
+                Effect::None,
+            ))
+        }
+        Call::SetBarMix { mix } => {
+            let mut mixer = state.lock_mixer()?;
+            if mix
+                .as_ref()
+                .is_some_and(|id| mixer.routing.mix(id).is_none())
+            {
+                return Err("Unknown bar volume mix".into());
+            }
+            let key = mixer.active_profile.clone().unwrap_or_default();
+            let mut prefs = mixer.prefs.clone();
+            if let Some(id) = mix {
+                prefs.omarchy_bar_mixes.insert(key, id);
+            } else {
+                prefs.omarchy_bar_mixes.remove(&key);
+            }
+            prefs.save().map_err(|e| e.to_string())?;
+            mixer.prefs = prefs;
+            done(Effect::Mixer)
+        }
         Call::SetInputVolume { input, volume } => {
             let (_, _, muted) = input_level(state, &input)?;
             set_input(state, &input, volume.min(MAX_VOLUME), muted)?;
@@ -730,5 +787,58 @@ mod tests {
         assert_eq!(levels.mixes[&mix], 0.7);
         // Silent meters are reported as zero, not left out.
         assert!(levels.inputs.values().filter(|v| **v == 0.0).count() >= 1);
+    }
+
+    #[test]
+    fn bar_target_is_persisted_per_profile_and_missing_targets_are_not_replaced() {
+        let _cfg = TempConfig::new("control-bar-mix");
+        let state = app(Arc::new(MockBackend::default()));
+        assert!(!Snapshot::current(&state, Some(vec![])).unwrap().meter_pro);
+        state.lock_mixer().unwrap().prefs.meter_pro = true;
+        assert!(Snapshot::current(&state, Some(vec![])).unwrap().meter_pro);
+        let (_, mix) = ids(&state);
+        state.lock_mixer().unwrap().active_profile = Some("Custom layout".into());
+        dispatch(
+            &state,
+            Call::SetBarMix {
+                mix: Some(mix.clone()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            Snapshot::current(&state, Some(vec![])).unwrap().bar_mix,
+            Some(mix.clone())
+        );
+        assert_eq!(
+            crate::persistence::prefs::Prefs::load().omarchy_bar_mixes["Custom layout"],
+            mix
+        );
+        state.lock_mixer().unwrap().active_profile = Some("Other layout".into());
+        assert_eq!(
+            Snapshot::current(&state, Some(vec![])).unwrap().bar_mix,
+            None
+        );
+        state.lock_mixer().unwrap().active_profile = Some("Custom layout".into());
+        assert!(dispatch(
+            &state,
+            Call::SetBarMix {
+                mix: Some("missing".into())
+            }
+        )
+        .is_err());
+        state
+            .lock_mixer()
+            .unwrap()
+            .routing
+            .mixes
+            .retain(|m| m.id != mix);
+        assert_eq!(
+            Snapshot::current(&state, Some(vec![])).unwrap().bar_mix,
+            None
+        );
+        dispatch(&state, Call::SetBarMix { mix: None }).unwrap();
+        assert!(!crate::persistence::prefs::Prefs::load()
+            .omarchy_bar_mixes
+            .contains_key("Custom layout"));
     }
 }

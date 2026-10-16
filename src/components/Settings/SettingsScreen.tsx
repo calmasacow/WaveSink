@@ -194,6 +194,10 @@ function MetersSection({ onError }: Readonly<{ onError: (error: string | null) =
 }
 
 export function SettingsScreen() {
+  const [panel, setPanel] = useState<{ supported: boolean; enabled: boolean } | null>(null);
+  const [panelBusy, setPanelBusy] = useState(false);
+  const [panelMessage, setPanelMessage] = useState<string | null>(null);
+  const [panelRestoreStage, setPanelRestoreStage] = useState<0 | 1 | 2>(0);
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [startMinimized, setStartMinimized] = useState(false);
   const [version, setVersion] = useState("");
@@ -202,6 +206,14 @@ export function SettingsScreen() {
   const replayOnboarding = useMixerStore((s) => s.replayOnboarding);
 
   useEffect(() => {
+    const refreshPanel = () => {
+      setPanelMessage(null);
+      void invoke<{ supported: boolean; enabled: boolean }>("get_omarchy_panel")
+        .then(setPanel)
+        .catch((e) => setError(String(e)));
+    };
+    refreshPanel();
+    window.addEventListener("focus", refreshPanel);
     void invoke<boolean>("get_autostart").then(setAutostart);
     void invoke<{ start_minimized: boolean }>("get_prefs")
       .then((p) => {
@@ -209,7 +221,32 @@ export function SettingsScreen() {
       })
       .catch(() => {});
     void getVersion().then(setVersion);
+    return () => window.removeEventListener("focus", refreshPanel);
   }, []);
+
+  const configurePanel = async (enabled: boolean) => {
+    if (!panel || panelBusy) return;
+    setPanelBusy(true);
+    setPanelMessage(null);
+    try {
+      const next = await invoke<{ supported: boolean; enabled: boolean }>("set_omarchy_panel", {
+        enabled,
+      });
+      setPanel(next);
+      setPanelMessage(
+        next.enabled
+          ? panel.enabled
+            ? "WaveSink panel reapplied successfully."
+            : "WaveSink panel enabled successfully."
+          : "OS audio panel restored.",
+      );
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPanelBusy(false);
+    }
+  };
 
   const toggleAutostart = async () => {
     if (autostart === null) return;
@@ -287,6 +324,64 @@ export function SettingsScreen() {
         </div>
 
         <MetersSection onError={setError} />
+        {panel?.supported && (
+          <>
+            <div className="section-label">Omarchy</div>
+            <div className="card" style={{ padding: "var(--sp-2)" }}>
+              <div className="row">
+                <div className="ricon">
+                  <Ms name="volume_up" />
+                </div>
+                <div className="rmain">
+                  <div className="rtitle">
+                    WaveSink audio panel
+                    <span
+                      className="tag"
+                      style={{ color: panel.enabled ? "var(--online)" : "var(--fg-muted)" }}
+                    >
+                      {panel.enabled ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="rsub" role="status">
+                    {panelBusy
+                      ? "Applying panel change…"
+                      : (panelMessage ??
+                        (panel.enabled
+                          ? "WaveSink panel is currently active in the bar."
+                          : "WaveSink panel is not active. Enable it without reinstalling."))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="select"
+                  disabled={panelBusy}
+                  onClick={() => void configurePanel(true)}
+                >
+                  {panelBusy
+                    ? "Applying…"
+                    : panel.enabled
+                      ? "Reapply panel"
+                      : "Enable WaveSink panel"}
+                </button>
+              </div>
+              {panel.enabled && (
+                <div className="row row-sub">
+                  <div className="rmain">
+                    <div className="rsub">Switch back to your OS audio panel</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="select"
+                    disabled={panelBusy}
+                    onClick={() => setPanelRestoreStage(1)}
+                  >
+                    Restore OS panel…
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <HotkeysSection onError={setError} />
 
@@ -338,6 +433,21 @@ export function SettingsScreen() {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        open={panelRestoreStage > 0}
+        onClose={() => setPanelRestoreStage(0)}
+        title={panelRestoreStage === 1 ? "Restore OS audio panel?" : "Are you sure?"}
+        confirmLabel={panelRestoreStage === 1 ? "Continue" : "Restore OS panel"}
+        onConfirm={() => {
+          if (panelRestoreStage === 1) setPanelRestoreStage(2);
+          else void configurePanel(false);
+        }}
+      >
+        {panelRestoreStage === 1
+          ? "This will restore the default OS audio panel. Any previous panel customizations will be preserved."
+          : "To put this panel back, open WaveSink Settings > Omarchy and click Enable WaveSink panel. No reinstall is needed."}
+      </ConfirmModal>
 
       <ConfirmModal
         open={confirmingReset}

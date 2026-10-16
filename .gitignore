@@ -6,3 +6,5 @@ src-tauri/gen/schemas/
 
 # Internal audit findings - local only, never committed
 technical_debt.md
+
+__pycache__/
