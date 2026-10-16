@@ -68,7 +68,7 @@
           "libayatana-appindicator3.so.1()(64bit)",
           "pipewire-pulseaudio",
           "wireplumber",
-          "libusb1"
+          "libusb-1.0.so.0()(64bit)"
         ],
         "files": {
           "/usr/share/applications/us.echo.WaveSink.desktop": "../packaging/linux/us.echo.WaveSink.desktop",
