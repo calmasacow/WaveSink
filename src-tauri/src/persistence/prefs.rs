@@ -46,6 +46,10 @@ pub struct Prefs {
     /// User-selected bar volume target per profile. Never guess a mix by name.
     #[serde(default)]
     pub omarchy_bar_mixes: std::collections::BTreeMap<String, String>,
+    /// Shell command that restarts the PipeWire stack for "Reset audio
+    /// engine". None = detect one for this system at the time of the reset.
+    #[serde(default)]
+    pub pipewire_reset_command: Option<String>,
 }
 
 fn default_meter_fps() -> u8 {
@@ -61,6 +65,7 @@ impl Default for Prefs {
             meter_fps: default_meter_fps(),
             meter_unfocused: MeterUnfocused::default(),
             omarchy_bar_mixes: Default::default(),
+            pipewire_reset_command: None,
         }
     }
 }
