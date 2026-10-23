@@ -156,9 +156,13 @@ pub async fn reset_audio_engine(app: AppHandle) -> Result<(), String> {
     }
     if managed_by_unit() {
         // --no-block: queue the job and return; systemd then stops us.
-        let _ = Command::new("systemctl")
+        let status = Command::new("systemctl")
             .args(["--user", "--no-block", "restart", UNIT_NAME])
-            .status();
+            .status()
+            .map_err(|e| format!("WaveSink restart: {e}"))?;
+        if !status.success() {
+            return Err(format!("WaveSink restart failed ({status})"));
+        }
         return Ok(());
     }
     app.restart()
