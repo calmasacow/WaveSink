@@ -3,6 +3,7 @@ pub mod buses;
 pub mod channels;
 pub mod devices;
 pub mod elgato;
+pub mod engine;
 pub mod eq;
 pub mod graph;
 pub mod hotkeys;

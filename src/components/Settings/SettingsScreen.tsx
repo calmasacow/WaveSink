@@ -193,6 +193,86 @@ function MetersSection({ onError }: Readonly<{ onError: (error: string | null) =
   );
 }
 
+interface EngineReset {
+  command: string;
+  detected: string;
+  custom: boolean;
+}
+
+/** The PipeWire restart behind the title bar's "Reset audio engine". */
+function EngineResetSection({ onError }: Readonly<{ onError: (error: string | null) => void }>) {
+  const [reset, setReset] = useState<EngineReset | null>(null);
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    void invoke<EngineReset>("get_engine_reset")
+      .then((r) => {
+        setReset(r);
+        setDraft(r.custom ? r.command : "");
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async (command: string | null) => {
+    try {
+      const next = await invoke<EngineReset>("set_engine_reset_command", { command });
+      setReset(next);
+      setDraft(next.custom ? next.command : "");
+      onError(null);
+    } catch (e) {
+      onError(String(e));
+    }
+  };
+
+  if (!reset) return null;
+  const dirty = draft.trim() !== (reset.custom ? reset.command : "");
+  return (
+    <>
+      <div className="section-label">Audio engine</div>
+      <div className="card" style={{ padding: "var(--sp-2)" }}>
+        <div className="row">
+          <div className="ricon">
+            <Ms name="restart_alt" />
+          </div>
+          <div className="rmain">
+            <div className="rtitle">PipeWire reset command</div>
+            <div className="rsub">
+              Runs from the title bar (right-click the engine status), then WaveSink relaunches.
+              Leave empty to use the detected command.
+            </div>
+          </div>
+        </div>
+        <div className="row row-sub">
+          <input
+            className="menu-input"
+            aria-label="PipeWire reset command"
+            placeholder={reset.detected}
+            value={draft}
+            spellCheck={false}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dirty) void save(draft);
+            }}
+          />
+          <button
+            type="button"
+            className="select"
+            disabled={!dirty}
+            onClick={() => void save(draft)}
+          >
+            Save
+          </button>
+          {reset.custom && (
+            <button type="button" className="select" onClick={() => void save(null)}>
+              Use detected
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function SettingsScreen() {
   const [panel, setPanel] = useState<{ supported: boolean; enabled: boolean } | null>(null);
   const [panelBusy, setPanelBusy] = useState(false);
@@ -324,6 +404,7 @@ export function SettingsScreen() {
         </div>
 
         <MetersSection onError={setError} />
+        <EngineResetSection onError={setError} />
         {panel?.supported && (
           <>
             <div className="section-label">Omarchy</div>
