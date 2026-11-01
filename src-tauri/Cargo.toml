@@ -34,6 +34,6 @@ rusb = "0.9.4"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "v0.10.1", features = ["v0_3_49"] }
 # Global hotkeys: the XDG portal on Wayland, direct X11 grabs as the fallback.
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
-global-hotkey = "0.8"
+global-hotkey = "0.9"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", default-features = false, features = ["macros", "time"] }
