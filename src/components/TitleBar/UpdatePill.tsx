@@ -110,7 +110,12 @@ export function UpdatePill() {
         <span className="dot" />
         {label}
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={`WaveSink ${latest} is available`}>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`WaveSink ${latest} is available`}
+        className="update-modal"
+      >
         {can_self_update ? (
           <>
             <p className="modal-text">
@@ -145,6 +150,11 @@ export function UpdatePill() {
                     : "WaveSink cannot identify how this copy was installed. Update it the same way you installed it."}
             </p>
             {command && <pre className="modal-code">{command}</pre>}
+            {notes_url && (
+              <a className="modal-link" href={notes_url} target="_blank" rel="noreferrer">
+                Release notes for {latest}
+              </a>
+            )}
             {skipBox}
             {error && <p className="modal-text err">{error}</p>}
             <div className="modal-btns">
@@ -161,11 +171,6 @@ export function UpdatePill() {
                 >
                   {copied ? "Copied" : "Copy command"}
                 </button>
-              )}
-              {notes_url && (
-                <a className="modal-btn" href={notes_url} target="_blank" rel="noreferrer">
-                  Release notes
-                </a>
               )}
               <button type="button" className="modal-btn" onClick={dismiss}>
                 Close

@@ -917,6 +917,11 @@ body,
 .modal.audio-fx-modal {
   --modal-w: 760px;
 }
+/* The update dialog carries a download URL and three actions, which the
+   default 380px cannot hold without wrapping a button onto its own row. */
+.modal.update-modal {
+  --modal-w: 520px;
+}
 /* Title row with the close affordance; flex: 0 0 auto so it survives the
    EQ panel turning its body into a flex column. */
 .modal-head {
@@ -950,11 +955,15 @@ body,
 }
 .modal-btns {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   justify-content: flex-end;
   margin-top: var(--sp-2);
 }
 .modal-btn {
+  /* A label is a phrase, not a paragraph: it wraps to the next button rather
+     than breaking across lines inside one. */
+  white-space: nowrap;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--bg-main);
@@ -1015,6 +1024,16 @@ a.modal-btn {
 .modal-text.err {
   color: var(--on-danger-wash);
 }
+/* A quiet link inside a dialog body, for context rather than an action. */
+.modal-link {
+  font-size: var(--fs-meta);
+  color: var(--accent-hover);
+  text-decoration: none;
+  align-self: flex-start;
+}
+.modal-link:hover {
+  text-decoration: underline;
+}
 /* An opt-out offered alongside a dialog's actions. */
 .modal-check {
   display: flex;
@@ -1028,6 +1047,7 @@ a.modal-btn {
 .modal-check input {
   accent-color: var(--accent);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .icon-color-grid {
