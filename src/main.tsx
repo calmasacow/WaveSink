@@ -1,6 +1,7 @@
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { bootTheme } from "./store/theme";
+import { bootUpdates } from "./store/update";
 import "material-symbols/outlined.css";
 import "./styles/globals.css";
 
@@ -12,6 +13,8 @@ if (new URLSearchParams(window.location.search).get("opaque") === "1") {
 
 // Apply the saved theme before first paint to avoid a flash of the default.
 bootTheme();
+// Checks GitHub now and every six hours; never blocks first paint.
+bootUpdates();
 
 const root = document.getElementById("root");
 if (root) {

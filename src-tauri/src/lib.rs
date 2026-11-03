@@ -259,6 +259,8 @@ pub fn run() {
             commands::hotkeys::get_hotkeys,
             commands::hotkeys::configure_hotkeys,
             commands::hotkeys::set_hotkey_binding,
+            commands::update::check_for_update,
+            commands::update::perform_update,
         ])
         .setup(move |app| {
             if let Err(error) = persistence::autostart::migrate_legacy_unit() {

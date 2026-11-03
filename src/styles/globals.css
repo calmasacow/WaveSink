@@ -227,6 +227,28 @@ body,
   background: var(--danger);
   box-shadow: 0 0 0 3px rgba(var(--danger-rgb), 0.16);
 }
+/* Update pill: a button, so it needs the engine pill's look without the
+   browser's default button chrome. Muted until a release is waiting. */
+.hb-update {
+  font-family: inherit;
+  cursor: pointer;
+  margin-right: var(--sp-2);
+}
+.hb-update:disabled {
+  cursor: default;
+}
+.hb-update .dot {
+  background: var(--fg-muted);
+  box-shadow: none;
+}
+.hb-update.avail {
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+.hb-update.avail .dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
 
 /* window controls */
 .wctl {
@@ -968,6 +990,30 @@ body,
 }
 .modal-btn.danger:hover {
   filter: brightness(1.12);
+}
+/* An <a> styled as a button (release notes) needs the text-link bits reset. */
+a.modal-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+/* A command for the user to copy; wraps rather than scrolls so the whole
+   thing is visible before they run it. */
+.modal-code {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-main);
+  color: var(--fg-primary);
+  font-family: inherit;
+  font-size: var(--fs-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.modal-text.err {
+  color: var(--on-danger-wash);
 }
 
 .icon-color-grid {
