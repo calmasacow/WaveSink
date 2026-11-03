@@ -26,6 +26,7 @@ export function UpdatePill() {
   const error = useUpdate((s) => s.error);
   const check = useUpdate((s) => s.check);
   const install = useUpdate((s) => s.install);
+  const launch = useUpdate((s) => s.launch);
   const skipped = useUpdate((s) => s.skipped);
   const setSkipped = useUpdate((s) => s.setSkipped);
   const [open, setOpen] = useState(false);
@@ -43,7 +44,16 @@ export function UpdatePill() {
   // Nothing to show until the first check returns.
   if (!status) return null;
 
-  const { available, latest, current, command, notes_url, can_self_update, install: kind } = status;
+  const {
+    available,
+    latest,
+    current,
+    command,
+    notes_url,
+    can_self_update,
+    can_launch_update,
+    install: kind,
+  } = status;
   const alert = alerting({ status, skipped });
 
   let label = `v${current}`;
@@ -128,15 +138,27 @@ export function UpdatePill() {
             <p className="modal-text">
               {kind === "nix"
                 ? "This install is managed by Nix. Update it through your flake or profile."
-                : command
-                  ? "Updating a packaged install needs root, so WaveSink cannot do it itself. Run:"
-                  : "WaveSink cannot identify how this copy was installed. Update it the same way you installed it."}
+                : can_launch_update
+                  ? "Updating needs root, so this opens a terminal that asks for your password and runs:"
+                  : command
+                    ? "Updating a packaged install needs root, so WaveSink cannot do it itself. Run:"
+                    : "WaveSink cannot identify how this copy was installed. Update it the same way you installed it."}
             </p>
             {command && <pre className="modal-code">{command}</pre>}
             {skipBox}
+            {error && <p className="modal-text err">{error}</p>}
             <div className="modal-btns">
+              {can_launch_update && (
+                <button type="button" className="modal-btn primary" onClick={() => void launch()}>
+                  Update to {latest}
+                </button>
+              )}
               {command && (
-                <button type="button" className="modal-btn primary" onClick={copy}>
+                <button
+                  type="button"
+                  className={"modal-btn" + (can_launch_update ? "" : " primary")}
+                  onClick={copy}
+                >
                   {copied ? "Copied" : "Copy command"}
                 </button>
               )}

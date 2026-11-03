@@ -30,7 +30,9 @@ pub struct EngineReset {
     pub custom: bool,
 }
 
-fn on_path(binary: &str) -> bool {
+/// Whether a binary is on PATH. Shared with the updater, which picks a
+/// terminal the same way.
+pub fn on_path(binary: &str) -> bool {
     std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).any(|dir| is_executable(&dir.join(binary))))
         .unwrap_or(false)

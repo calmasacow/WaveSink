@@ -8,6 +8,7 @@
 //! update in place.
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -118,6 +119,92 @@ pub fn install_kind() -> InstallKind {
     )
 }
 
+/// How to open a terminal for a privileged command.
+///
+/// Updating a packaged install needs root, and WaveSink is a background GUI
+/// service with no terminal of its own. Omarchy's answer for exactly this is a
+/// floating terminal (`omarchy-install-app` launches `omarchy-pkg-add` that
+/// way), and pacman is interactive anyway. Running the download through
+/// `pkexec` instead would hand root a payload sitting in user-writable space,
+/// which Omarchy's own guidance calls out as a privilege escalation, so the
+/// terminal asks for the password and shows what it is about to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Terminal {
+    program: String,
+    /// Arguments before the shell command itself.
+    args: Vec<String>,
+}
+
+impl Terminal {
+    fn new(program: &str, args: &[&str]) -> Self {
+        Self {
+            program: program.to_owned(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+        }
+    }
+}
+
+/// Pick a terminal, preferring the desktop's own launcher so the window is
+/// themed and placed the way the rest of the system does it.
+fn find_terminal(
+    has_binary: impl Fn(&str) -> bool,
+    terminal_env: Option<&str>,
+) -> Option<Terminal> {
+    // Omarchy's wrapper takes the command as one argument and adds its own
+    // logo/done presentation around it.
+    if has_binary("omarchy-launch-floating-terminal-with-presentation") {
+        return Some(Terminal::new(
+            "omarchy-launch-floating-terminal-with-presentation",
+            &[],
+        ));
+    }
+    if has_binary("xdg-terminal-exec") {
+        return Some(Terminal::new("xdg-terminal-exec", &["-e", "bash", "-c"]));
+    }
+    // $TERMINAL is only trusted when it really is an executable we can find.
+    if let Some(term) = terminal_env.filter(|t| !t.is_empty() && has_binary(t)) {
+        return Some(Terminal::new(term, &["-e", "bash", "-c"]));
+    }
+    [
+        "ghostty",
+        "foot",
+        "kitty",
+        "alacritty",
+        "gnome-terminal",
+        "konsole",
+        "xterm",
+    ]
+    .into_iter()
+    .find(|t| has_binary(t))
+    .map(|t| {
+        // gnome-terminal ends its own options with `--` before the command.
+        let args: &[&str] = if t == "gnome-terminal" {
+            &["--", "bash", "-c"]
+        } else {
+            &["-e", "bash", "-c"]
+        };
+        Terminal::new(t, args)
+    })
+}
+
+fn terminal() -> Option<Terminal> {
+    find_terminal(
+        crate::commands::engine::on_path,
+        std::env::var("TERMINAL").ok().as_deref(),
+    )
+}
+
+/// The script a terminal runs: say what is happening, do it, then wait so the
+/// result stays readable. Omarchy's wrapper supplies its own done-screen.
+fn update_script(command: &str, version: &str, omarchy: bool) -> String {
+    let announce = format!("echo 'Updating WaveSink to {version}...'; echo");
+    if omarchy {
+        format!("{announce}; {command}")
+    } else {
+        format!("{announce}; {command}; echo; read -n1 -r -p 'Press any key to close...'")
+    }
+}
+
 /// Compare two dotted numeric versions. Non-numeric parts (a `-rc1` suffix)
 /// sort below a bare release, so a prerelease never looks newer than the
 /// stable it precedes.
@@ -155,6 +242,9 @@ pub struct UpdateStatus {
     pub install: InstallKind,
     /// True when clicking can perform the update (AppImage only).
     pub can_self_update: bool,
+    /// True when clicking can open a terminal that runs the update for a
+    /// packaged install.
+    pub can_launch_update: bool,
     /// Command for a packaged install to update by hand.
     pub command: Option<String>,
     pub notes_url: Option<String>,
@@ -233,6 +323,14 @@ fn status_for(
             .then(|| latest.as_deref().and_then(|t| install.manual_command(t)))
             .flatten(),
         can_self_update: actionable && install.self_updates(),
+        // A terminal is only useful where there is a command for it to run.
+        can_launch_update: actionable
+            && !install.self_updates()
+            && latest
+                .as_deref()
+                .and_then(|t| install.manual_command(t))
+                .is_some()
+            && terminal().is_some(),
         notes_url: latest
             .as_deref()
             .map(|t| format!("{RELEASES_BASE}/tag/{t}")),
@@ -255,6 +353,39 @@ pub async fn check_for_update() -> UpdateStatus {
     })
     .await
     .unwrap_or_else(|e| status_for(None, Some(e.to_string()), None))
+}
+
+/// Open a terminal that updates a packaged install. The terminal owns the
+/// privilege prompt; WaveSink never runs as root.
+#[tauri::command]
+pub fn launch_update(tag: String) -> Result<(), String> {
+    // The tag reaches a shell command line, so it is validated here as well as
+    // where it arrived from GitHub.
+    if !valid_tag(&tag) {
+        return Err(format!("refusing to install unexpected tag: {tag}"));
+    }
+    let install = install_kind();
+    if install.self_updates() {
+        return Err("this install updates itself".into());
+    }
+    let command = install
+        .manual_command(&tag)
+        .ok_or("this install has no update command")?;
+    let term = terminal().ok_or("no terminal found to run the update in")?;
+    let omarchy = term.program.starts_with("omarchy-");
+    let script = update_script(&command, tag.trim_start_matches('v'), omarchy);
+
+    // Detached, so the terminal outlives this click and is not killed when
+    // WaveSink restarts into the new version.
+    std::process::Command::new(&term.program)
+        .args(&term.args)
+        .arg(script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open a terminal: {e}"))
 }
 
 /// Download the new AppImage, verify it against the release checksums, and
@@ -507,6 +638,81 @@ mod tests {
         ] {
             assert!(!kind.self_updates(), "{kind:?} must not self-update");
         }
+    }
+
+    /// A host where only the named binaries exist.
+    fn bins(present: &'static [&'static str]) -> impl Fn(&str) -> bool {
+        move |b| present.contains(&b)
+    }
+
+    #[test]
+    fn omarchys_own_launcher_is_preferred() {
+        let term = find_terminal(
+            bins(&[
+                "omarchy-launch-floating-terminal-with-presentation",
+                "xdg-terminal-exec",
+                "ghostty",
+            ]),
+            Some("foot"),
+        )
+        .unwrap();
+        assert_eq!(
+            term.program,
+            "omarchy-launch-floating-terminal-with-presentation"
+        );
+        // Its wrapper takes the script as a single bare argument.
+        assert!(term.args.is_empty());
+    }
+
+    #[test]
+    fn the_desktop_launcher_comes_before_a_named_emulator() {
+        let term = find_terminal(bins(&["xdg-terminal-exec", "xterm"]), None).unwrap();
+        assert_eq!(term.program, "xdg-terminal-exec");
+        assert_eq!(term.args, ["-e", "bash", "-c"]);
+    }
+
+    #[test]
+    fn terminal_env_is_used_only_when_it_actually_exists() {
+        // Set but not installed: fall through to something real.
+        let term = find_terminal(bins(&["xterm"]), Some("not-installed")).unwrap();
+        assert_eq!(term.program, "xterm");
+        // Set and installed: honoured.
+        let term = find_terminal(bins(&["foot", "xterm"]), Some("foot")).unwrap();
+        assert_eq!(term.program, "foot");
+    }
+
+    #[test]
+    fn gnome_terminal_takes_its_command_after_a_separator() {
+        let term = find_terminal(bins(&["gnome-terminal"]), None).unwrap();
+        assert_eq!(term.args, ["--", "bash", "-c"]);
+    }
+
+    #[test]
+    fn a_host_with_no_terminal_reports_none() {
+        assert_eq!(find_terminal(bins(&[]), None), None);
+        assert_eq!(find_terminal(bins(&["vim"]), Some("")), None);
+    }
+
+    #[test]
+    fn the_script_waits_so_a_failure_stays_readable() {
+        let script = update_script("sudo pacman -U x.zst", "1.3.0", false);
+        assert!(script.contains("Updating WaveSink to 1.3.0"));
+        assert!(script.contains("sudo pacman -U x.zst"));
+        assert!(script.contains("read -n1"), "must not vanish on error");
+    }
+
+    #[test]
+    fn omarchy_supplies_its_own_done_screen() {
+        let script = update_script("sudo pacman -U x.zst", "1.3.0", true);
+        assert!(script.contains("sudo pacman -U x.zst"));
+        assert!(!script.contains("read -n1"), "the wrapper already waits");
+    }
+
+    #[test]
+    fn launching_refuses_anything_but_a_packaged_install() {
+        // Guard rails are checked before a terminal is ever opened.
+        assert!(launch_update("dev".into()).is_err());
+        assert!(launch_update("v1.3.0; rm -rf /".into()).is_err());
     }
 
     #[test]

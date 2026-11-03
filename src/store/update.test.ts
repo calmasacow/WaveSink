@@ -11,6 +11,7 @@ const STATUS = {
   available: true,
   install: "appimage" as const,
   can_self_update: true,
+  can_launch_update: false,
   command: null,
   notes_url: "https://example.invalid/tag/v1.3.0",
   checked_at: 1,
@@ -67,6 +68,30 @@ describe("update store", () => {
   it("does nothing when there is no release to install", async () => {
     await useUpdate.getState().install();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  describe("launching a terminal update", () => {
+    it("passes the tag the check reported", async () => {
+      invoke.mockResolvedValue(STATUS);
+      await useUpdate.getState().check();
+      invoke.mockClear();
+      invoke.mockResolvedValue(undefined);
+      await useUpdate.getState().launch();
+      expect(invoke).toHaveBeenCalledWith("launch_update", { tag: "v1.3.0" });
+    });
+
+    it("reports a terminal that would not open", async () => {
+      invoke.mockResolvedValue(STATUS);
+      await useUpdate.getState().check();
+      invoke.mockRejectedValue("no terminal found to run the update in");
+      await useUpdate.getState().launch();
+      expect(useUpdate.getState().error).toContain("no terminal found");
+    });
+
+    it("does nothing with no release to launch", async () => {
+      await useUpdate.getState().launch();
+      expect(invoke).not.toHaveBeenCalled();
+    });
   });
 
   describe("skipping a version", () => {

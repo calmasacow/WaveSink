@@ -13,6 +13,7 @@ const BASE = {
   latest: "v1.3.0",
   available: true,
   command: null as string | null,
+  can_launch_update: false,
   notes_url: "https://example.invalid/tag/v1.3.0",
   checked_at: Math.floor(Date.now() / 1000),
   error: null,
@@ -141,6 +142,61 @@ it("a newer release alerts even though the previous one was skipped", () => {
   const pill = host.querySelector("button")!;
   expect(pill.className).toContain("avail");
   expect(pill.textContent).toContain("Update 1.4.0");
+});
+
+it("opens a terminal to update a packaged install", () => {
+  useUpdate.setState({
+    status: {
+      ...BASE,
+      install: "pacman",
+      can_self_update: false,
+      can_launch_update: true,
+      command: "sudo pacman -U https://example.invalid/wavesink.pkg.tar.zst",
+    },
+  });
+  invoke.mockResolvedValue(undefined);
+  const { host, click } = render();
+  click("Update 1.3.0");
+  // The command stays visible: a user who prefers their own terminal still has it.
+  expect(host.querySelector(".modal-code")?.textContent).toContain("sudo pacman -U");
+  click("Update to v1.3.0");
+  expect(invoke).toHaveBeenCalledWith("launch_update", { tag: "v1.3.0" });
+});
+
+it("keeps the copyable command when no terminal could be found", () => {
+  useUpdate.setState({
+    status: {
+      ...BASE,
+      install: "pacman",
+      can_self_update: false,
+      can_launch_update: false,
+      command: "sudo pacman -U https://example.invalid/wavesink.pkg.tar.zst",
+    },
+  });
+  const { host, click } = render();
+  click("Update 1.3.0");
+  const labels = [...host.querySelectorAll("button")].map((b) => b.textContent);
+  expect(labels.some((l) => l?.startsWith("Update to"))).toBe(false);
+  expect(labels).toContain("Copy command");
+});
+
+it("shows why a terminal failed to open, without losing the command", async () => {
+  useUpdate.setState({
+    status: {
+      ...BASE,
+      install: "pacman",
+      can_self_update: false,
+      can_launch_update: true,
+      command: "sudo pacman -U https://example.invalid/wavesink.pkg.tar.zst",
+    },
+  });
+  invoke.mockRejectedValue("no terminal found to run the update in");
+  const { host, click } = render();
+  click("Update 1.3.0");
+  click("Update to v1.3.0");
+  await act(async () => {});
+  expect(host.querySelector(".modal-text.err")?.textContent).toContain("no terminal found");
+  expect(host.querySelector(".modal-code")).not.toBeNull();
 });
 
 it("tells a Nix install to use its own configuration", () => {

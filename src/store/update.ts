@@ -9,6 +9,7 @@ export interface UpdateStatus {
   available: boolean;
   install: InstallKind;
   can_self_update: boolean;
+  can_launch_update: boolean;
   command: string | null;
   notes_url: string | null;
   checked_at: number | null;
@@ -39,6 +40,8 @@ interface UpdateState {
   skipped: string | null;
   check: () => Promise<void>;
   install: () => Promise<void>;
+  /** Open a terminal that runs the packaged update command. */
+  launch: () => Promise<void>;
   /** Remember (or forget) that this tag should not raise an alert. */
   setSkipped: (tag: string, skip: boolean) => void;
 }
@@ -62,6 +65,18 @@ export const useUpdate = create<UpdateState>((set, get) => ({
     // in `status.error` and the pill stays quiet.
     const status = await invoke<UpdateStatus>("check_for_update").catch(() => null);
     if (status) set({ status });
+  },
+  launch: async () => {
+    const tag = get().status?.latest;
+    if (!tag) return;
+    set({ error: null });
+    try {
+      // The terminal owns the privilege prompt; this resolves as soon as it
+      // opens, not when the update finishes.
+      await invoke("launch_update", { tag });
+    } catch (e) {
+      set({ error: String(e) });
+    }
   },
   install: async () => {
     const tag = get().status?.latest;
