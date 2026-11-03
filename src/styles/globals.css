@@ -1015,6 +1015,20 @@ a.modal-btn {
 .modal-text.err {
   color: var(--on-danger-wash);
 }
+/* An opt-out offered alongside a dialog's actions. */
+.modal-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  font-size: var(--fs-meta);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+.modal-check input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 
 .icon-color-grid {
   display: grid;

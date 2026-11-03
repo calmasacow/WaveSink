@@ -34,8 +34,9 @@ function render() {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   invoke.mockReset();
+  localStorage.clear();
   document.body.innerHTML = "";
-  useUpdate.setState({ status: null, installing: false, error: null });
+  useUpdate.setState({ status: null, installing: false, error: null, skipped: null });
 });
 
 it("shows nothing until the first check returns", () => {
@@ -92,6 +93,54 @@ it("gives a packaged install the command instead of an update button", () => {
   const labels = [...host.querySelectorAll("button")].map((b) => b.textContent);
   expect(labels.some((l) => l?.startsWith("Update to"))).toBe(false);
   expect(labels).toContain("Copy command");
+});
+
+it("offers the skip box on a packaged install too, and mutes the pill once ticked", () => {
+  useUpdate.setState({
+    status: {
+      ...BASE,
+      install: "pacman",
+      can_self_update: false,
+      command: "sudo pacman -U https://example.invalid/wavesink.pkg.tar.zst",
+    },
+  });
+  const { host, click } = render();
+  click("Update 1.3.0");
+  const box = host.querySelector<HTMLInputElement>(".modal-check input")!;
+  expect(box).toBeDefined();
+  expect(box.checked).toBe(false);
+  act(() => box.click());
+  expect(useUpdate.getState().skipped).toBe("v1.3.0");
+  // The pill drops its accent but still reports the release.
+  const pill = host.querySelector("button")!;
+  expect(pill.className).not.toContain("avail");
+  expect(pill.textContent).toContain("Update 1.3.0");
+});
+
+it("unticking the box restores the alert", () => {
+  useUpdate.setState({
+    status: { ...BASE, install: "appimage", can_self_update: true },
+    skipped: "v1.3.0",
+  });
+  const { host, click } = render();
+  expect(host.querySelector("button")!.className).not.toContain("avail");
+  click("Update 1.3.0");
+  const box = host.querySelector<HTMLInputElement>(".modal-check input")!;
+  expect(box.checked, "reflects the stored choice").toBe(true);
+  act(() => box.click());
+  expect(useUpdate.getState().skipped).toBeNull();
+  expect(host.querySelector("button")!.className).toContain("avail");
+});
+
+it("a newer release alerts even though the previous one was skipped", () => {
+  useUpdate.setState({
+    status: { ...BASE, latest: "v1.4.0", install: "appimage", can_self_update: true },
+    skipped: "v1.3.0",
+  });
+  const { host } = render();
+  const pill = host.querySelector("button")!;
+  expect(pill.className).toContain("avail");
+  expect(pill.textContent).toContain("Update 1.4.0");
 });
 
 it("tells a Nix install to use its own configuration", () => {
