@@ -11,3 +11,4 @@ pub mod matrix;
 pub mod profiles;
 pub mod routing;
 pub mod settings;
+pub mod update;

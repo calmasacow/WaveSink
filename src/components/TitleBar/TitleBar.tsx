@@ -9,6 +9,7 @@ import { MenuItem } from "../MenuItem";
 import { Popover } from "../Popover";
 import appIcon from "../../../assets/WaveSinkIcon.png";
 import { ProfileMenu } from "./ProfileMenu";
+import { UpdatePill } from "./UpdatePill";
 
 interface EngineReset {
   command: string;
@@ -69,6 +70,7 @@ export function TitleBar({ screen }: Readonly<{ screen: string }>) {
       </div>
       <div data-tauri-drag-region className="hb-spacer" />
       <ProfileMenu />
+      <UpdatePill />
       <div style={{ position: "relative" }}>
         <div
           className={"hb-status" + (error && !resetting ? " err" : "")}
