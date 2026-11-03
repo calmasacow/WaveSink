@@ -13,6 +13,21 @@ export interface ThemeOption {
 }
 
 const DESCRIPTIONS: Record<(typeof BUNDLED_THEMES)[number]["id"], string> = {
+  aetheria: "Deep indigo night with teal text and a rose accent.",
+  archwave: "Violet-black synth haze with hot pink and cyan.",
+  ash: "Neutral greyscale, no colour cast at all.",
+  ayaka: "True black with warm amber highlights.",
+  "azure-glow": "Midnight navy lit by bright cyan.",
+  blackgold: "Near-black with muted olive-gold warmth.",
+  matrix: "Terminal black and phosphor green, top to bottom.",
+  moodpeak: "Cool slate blue with a soft teal accent.",
+  "neon-dusk": "Dusky violet with a neon pink accent.",
+  "retro-bloom": "Gruvbox-warm greys with a bright orange accent.",
+  retropc: "Amber monochrome in the old CRT manner.",
+  "space-monkey": "Dark roasted brown with burnt orange.",
+  synthwave84: "Purple-black with full-strength magenta.",
+  terminus: "Deep navy with sand and tan highlights.",
+  "waveform-dark": "Pure black with magenta and coral signal colours.",
   catppuccin: "Soft dark pastels with cool lavender-blue accents.",
   "catppuccin-latte": "Airy light pastels with a crisp blue accent.",
   ethereal: "Deep midnight blue with warm cream and violet.",

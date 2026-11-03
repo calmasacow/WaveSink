@@ -41,8 +41,12 @@ describe("theme", () => {
   });
 
   it("bundles every stock Omarchy palette", () => {
-    expect(BUNDLED_THEMES).toHaveLength(22);
+    expect(BUNDLED_THEMES).toHaveLength(37);
     expect(BUNDLED_THEMES.filter((theme) => theme.mode === "light")).toHaveLength(5);
+    // Ids are unique and sorted, so the picker order is stable.
+    const ids = BUNDLED_THEMES.map((theme) => theme.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([...ids].sort());
     for (const theme of BUNDLED_THEMES) {
       for (const key of REQUIRED_COLORS) {
         expect(theme.colors[key], `${theme.id}.${key}`).toMatch(/^#[0-9a-f]{6}$/i);
