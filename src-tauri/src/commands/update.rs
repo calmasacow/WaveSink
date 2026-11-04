@@ -44,23 +44,34 @@ impl InstallKind {
     /// install is owned by the user's configuration).
     pub fn manual_command(self, tag: &str) -> Option<String> {
         let version = tag.trim_start_matches('v');
-        let url = |asset: &str| format!("{RELEASES_BASE}/download/{tag}/{asset}");
-        match self {
-            InstallKind::Pacman => Some(format!(
-                "sudo pacman -U {}",
-                url(&format!("wavesink-bin-{version}-1-x86_64.pkg.tar.zst"))
-            )),
-            InstallKind::Dpkg => Some(format!(
-                "sudo dpkg -i {}",
-                url(&format!("wavesink_{version}_amd64.deb"))
-            )),
-            InstallKind::Rpm => Some(format!(
-                "sudo rpm -U {}",
-                url(&format!("wavesink-{version}-1.x86_64.rpm"))
-            )),
-            InstallKind::AppImage | InstallKind::Nix | InstallKind::Unknown => None,
-        }
+        let (asset, install) = match self {
+            InstallKind::Pacman => (
+                format!("wavesink-bin-{version}-1-x86_64.pkg.tar.zst"),
+                "sudo pacman -U",
+            ),
+            InstallKind::Dpkg => (format!("wavesink_{version}_amd64.deb"), "sudo apt install"),
+            InstallKind::Rpm => (format!("wavesink-{version}-1.x86_64.rpm"), "sudo rpm -U"),
+            InstallKind::AppImage | InstallKind::Nix | InstallKind::Unknown => return None,
+        };
+        Some(verified_install(tag, &asset, install))
     }
+}
+
+/// Download, check against the release SHA256SUMS, then install the local
+/// file, as scripts/install/*.sh do. Installing from a URL is wrong for both
+/// managers: pacman treats a URL as a remote package and demands a `.sig` we
+/// don't publish, and dpkg cannot fetch at all. A local file also gets the
+/// checksum check a URL install would skip.
+///
+/// `tag` is validated by `valid_tag` and `asset` is built from it, so neither
+/// can carry shell syntax into the command.
+fn verified_install(tag: &str, asset: &str, install: &str) -> String {
+    let base = format!("{RELEASES_BASE}/download/{tag}");
+    format!(
+        "d=$(mktemp -d) && cd \"$d\" && curl -fsSLO --retry 3 {base}/{asset} && \
+curl -fsSL --retry 3 {base}/SHA256SUMS | awk '$2 == \"{asset}\"' | sha256sum -c - && \
+{install} ./{asset}"
+    )
 }
 
 /// Classify from the executable path, which is how each installer lays it out.
@@ -614,16 +625,37 @@ mod tests {
     #[test]
     fn packaged_installs_get_a_pinned_download_url() {
         let pacman = InstallKind::Pacman.manual_command("v1.3.0").unwrap();
-        assert!(pacman.starts_with("sudo pacman -U https://"));
-        assert!(pacman.ends_with("wavesink-bin-1.3.0-1-x86_64.pkg.tar.zst"));
+        assert!(
+            pacman.contains("/releases/download/v1.3.0/wavesink-bin-1.3.0-1-x86_64.pkg.tar.zst")
+        );
+        assert!(pacman.ends_with("sudo pacman -U ./wavesink-bin-1.3.0-1-x86_64.pkg.tar.zst"));
         assert!(InstallKind::Dpkg
             .manual_command("v1.3.0")
             .unwrap()
-            .ends_with("wavesink_1.3.0_amd64.deb"));
+            .ends_with("sudo apt install ./wavesink_1.3.0_amd64.deb"));
         assert!(InstallKind::Rpm
             .manual_command("v1.3.0")
             .unwrap()
-            .ends_with("wavesink-1.3.0-1.x86_64.rpm"));
+            .ends_with("sudo rpm -U ./wavesink-1.3.0-1.x86_64.rpm"));
+    }
+
+    /// Regression: `pacman -U <url>` failed in real use on 1.3.0 -> 1.3.2,
+    /// asking for a .sig the release does not ship.
+    #[test]
+    fn packages_install_from_a_verified_local_file_never_a_url() {
+        for kind in [InstallKind::Pacman, InstallKind::Dpkg, InstallKind::Rpm] {
+            let cmd = kind.manual_command("v1.3.2").unwrap();
+            let install = cmd.rsplit(" && ").next().unwrap();
+            assert!(
+                !install.contains("https://"),
+                "{kind:?} installs from a URL: {install}"
+            );
+            assert!(install.contains(" ./"), "{kind:?}: {install}");
+            assert!(
+                cmd.contains("sha256sum -c -"),
+                "{kind:?} skips the checksum"
+            );
+        }
     }
 
     #[test]
