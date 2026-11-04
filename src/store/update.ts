@@ -84,7 +84,8 @@ export const useUpdate = create<UpdateState>((set, get) => ({
     set({ installing: true, error: null });
     try {
       await invoke("perform_update", { tag });
-      // The new image is in place; it runs on next launch.
+      // On success WaveSink restarts and this window goes away; the check
+      // only runs if the relaunch did not take.
       await get().check();
     } catch (e) {
       set({ error: String(e) });

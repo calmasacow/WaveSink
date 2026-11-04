@@ -205,14 +205,43 @@ fn terminal() -> Option<Terminal> {
     )
 }
 
-/// The script a terminal runs: say what is happening, do it, then wait so the
-/// result stays readable. Omarchy's wrapper supplies its own done-screen.
-fn update_script(command: &str, version: &str, omarchy: bool) -> String {
+/// The script a terminal runs: say what is happening, do it, restart WaveSink
+/// into the new version, then wait so the result stays readable. Omarchy's
+/// wrapper supplies its own done-screen. The restart is chained with `&&`, so a
+/// failed download, a bad checksum or a declined prompt leaves WaveSink running.
+fn update_script(command: &str, version: &str, restart: &str, omarchy: bool) -> String {
     let announce = format!("echo 'Updating WaveSink to {version}...'; echo");
+    let run = format!("{command} && echo && echo 'Restarting WaveSink...' && {restart}");
     if omarchy {
-        format!("{announce}; {command}")
+        format!("{announce}; {run}")
     } else {
-        format!("{announce}; {command}; echo; read -n1 -r -p 'Press any key to close...'")
+        format!("{announce}; {run}; echo; read -n1 -r -p 'Press any key to close...'")
+    }
+}
+
+/// Single-quote for sh, so a path with spaces or quotes stays one word.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// How the terminal restarts WaveSink once the new package is installed.
+///
+/// Under the autostart unit, systemd restarts it. Otherwise the terminal stops
+/// this process, waits for it to exit - a second copy started while it lives
+/// would only hand its arguments to the old one - then starts the binary
+/// again, detached so it outlives the terminal.
+fn restart_command(managed: bool, pid: u32, exe: &Path) -> String {
+    if managed {
+        format!(
+            "systemctl --user restart {}",
+            crate::persistence::autostart::UNIT_NAME
+        )
+    } else {
+        format!(
+            "kill {pid} && while kill -0 {pid} 2>/dev/null; do sleep 0.2; done && \
+setsid -f {} >/dev/null 2>&1",
+            sh_quote(&exe.to_string_lossy())
+        )
     }
 }
 
@@ -384,7 +413,14 @@ pub fn launch_update(tag: String) -> Result<(), String> {
         .ok_or("this install has no update command")?;
     let term = terminal().ok_or("no terminal found to run the update in")?;
     let omarchy = term.program.starts_with("omarchy-");
-    let script = update_script(&command, tag.trim_start_matches('v'), omarchy);
+    // Read now, before the package replaces the binary on disk.
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let restart = restart_command(
+        crate::commands::engine::managed_by_unit(),
+        std::process::id(),
+        &exe,
+    );
+    let script = update_script(&command, tag.trim_start_matches('v'), &restart, omarchy);
 
     // Detached, so the terminal outlives this click and is not killed when
     // WaveSink restarts into the new version.
@@ -402,10 +438,12 @@ pub fn launch_update(tag: String) -> Result<(), String> {
 /// Download the new AppImage, verify it against the release checksums, and
 /// swap it in. Only valid when `can_self_update` is true.
 #[tauri::command]
-pub async fn perform_update(tag: String) -> Result<(), String> {
+pub async fn perform_update(app: tauri::AppHandle, tag: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || self_update(&tag))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())??;
+    // The new image is in place; start it.
+    crate::commands::engine::relaunch(&app)
 }
 
 fn self_update(tag: &str) -> Result<(), String> {
@@ -727,7 +765,7 @@ mod tests {
 
     #[test]
     fn the_script_waits_so_a_failure_stays_readable() {
-        let script = update_script("sudo pacman -U x.zst", "1.3.0", false);
+        let script = update_script("sudo pacman -U x.zst", "1.3.0", "RESTART", false);
         assert!(script.contains("Updating WaveSink to 1.3.0"));
         assert!(script.contains("sudo pacman -U x.zst"));
         assert!(script.contains("read -n1"), "must not vanish on error");
@@ -735,9 +773,37 @@ mod tests {
 
     #[test]
     fn omarchy_supplies_its_own_done_screen() {
-        let script = update_script("sudo pacman -U x.zst", "1.3.0", true);
+        let script = update_script("sudo pacman -U x.zst", "1.3.0", "RESTART", true);
         assert!(script.contains("sudo pacman -U x.zst"));
         assert!(!script.contains("read -n1"), "the wrapper already waits");
+    }
+
+    #[test]
+    fn restart_runs_only_after_a_successful_install() {
+        let script = update_script("INSTALL", "1.3.4", "RESTART", true);
+        assert!(script.contains("INSTALL && echo && echo 'Restarting WaveSink...' && RESTART"));
+    }
+
+    #[test]
+    fn the_unit_restarts_a_service_managed_copy() {
+        assert_eq!(
+            restart_command(true, 42, Path::new("/usr/bin/wavesink")),
+            "systemctl --user restart wavesink.service"
+        );
+    }
+
+    #[test]
+    fn a_standalone_copy_waits_for_exit_before_relaunching() {
+        let cmd = restart_command(false, 42, Path::new("/usr/bin/wavesink"));
+        let kill = cmd.find("kill 42").unwrap();
+        let wait = cmd.find("while kill -0 42").unwrap();
+        let start = cmd.find("setsid -f '/usr/bin/wavesink'").unwrap();
+        assert!(kill < wait && wait < start, "{cmd}");
+    }
+
+    #[test]
+    fn an_awkward_exe_path_stays_one_shell_word() {
+        assert_eq!(sh_quote("/opt/Wave Sink/it's"), "'/opt/Wave Sink/it'\\''s'");
     }
 
     #[test]

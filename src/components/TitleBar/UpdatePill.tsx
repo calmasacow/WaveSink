@@ -120,7 +120,7 @@ export function UpdatePill() {
           <>
             <p className="modal-text">
               Downloads the new AppImage, verifies its checksum, and replaces{" "}
-              <code>WaveSink.AppImage</code>. The running version keeps going until you restart.
+              <code>WaveSink.AppImage</code>, then restarts WaveSink into the new version.
             </p>
             {error && <p className="modal-text err">{error}</p>}
             {skipBox}
@@ -144,7 +144,7 @@ export function UpdatePill() {
               {kind === "nix"
                 ? "This install is managed by Nix. Update it through your flake or profile."
                 : can_launch_update
-                  ? "Updating needs root, so this opens a terminal that asks for your password and runs:"
+                  ? "Updating needs root, so this opens a terminal that asks for your password, runs the command below, then restarts WaveSink:"
                   : command
                     ? "Updating a packaged install needs root, so WaveSink cannot do it itself. Run:"
                     : "WaveSink cannot identify how this copy was installed. Update it the same way you installed it."}
