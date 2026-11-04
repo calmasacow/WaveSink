@@ -103,7 +103,7 @@ fn resolve(custom: Option<&str>) -> EngineReset {
 
 /// True when this process is the main process of the autostart unit, so
 /// systemd (not us) must relaunch it.
-fn managed_by_unit() -> bool {
+pub fn managed_by_unit() -> bool {
     systemctl_show(UNIT_NAME, "MainPID").as_deref() == Some(&std::process::id().to_string())
 }
 
@@ -156,6 +156,12 @@ pub async fn reset_audio_engine(app: AppHandle) -> Result<(), String> {
             stderr.trim()
         ));
     }
+    relaunch(&app)
+}
+
+/// Restart WaveSink into whatever binary is now on disk. Under the autostart
+/// unit systemd must do it, or it would see us exit and restart us twice.
+pub fn relaunch(app: &AppHandle) -> Result<(), String> {
     if managed_by_unit() {
         // --no-block: queue the job and return; systemd then stops us.
         let status = Command::new("systemctl")
