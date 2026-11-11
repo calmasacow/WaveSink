@@ -86,7 +86,8 @@ pub fn load_profile_on(state: &AppState, name: String) -> Result<(), String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let profile = profiles::load(&name).map_err(|e| e.to_string())?;
-    let target = profile.routing.clone();
+    let mut target = profile.routing.clone();
+    crate::audio::hdmi::repin(&mut target);
     if target.channels().next().is_none() {
         return Err(format!("profile {name} has no channels"));
     }

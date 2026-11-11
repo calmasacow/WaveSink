@@ -346,11 +346,23 @@ pub fn remove_hardware_input(state: State<'_, AppState>, input_id: String) -> Re
 pub fn set_mix_outputs(
     state: State<'_, AppState>,
     mix_id: String,
-    outputs: Vec<OutputBinding>,
+    mut outputs: Vec<OutputBinding>,
 ) -> Result<(), String> {
     if state.lock_mixer()?.routing.mix(&mix_id).is_none() {
         return Err(format!("unknown mix {mix_id}"));
     }
+    let mut probe = RoutingModel::default();
+    probe.mixes.push(crate::routing_model::MixDef {
+        output_bindings: std::mem::take(&mut outputs),
+        ..state
+            .lock_mixer()?
+            .routing
+            .mix(&mix_id)
+            .cloned()
+            .ok_or("mix vanished")?
+    });
+    crate::audio::hdmi::stamp(&mut probe);
+    outputs = probe.mixes.remove(0).output_bindings;
     state
         .backend
         .set_mix_outputs(&mix_id, &outputs)

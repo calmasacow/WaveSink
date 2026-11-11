@@ -132,6 +132,7 @@ export interface RoutingInput {
 export interface OutputBinding {
   device: string;
   enabled: boolean;
+  display?: string;
 }
 export interface RoutingMix {
   id: string;
