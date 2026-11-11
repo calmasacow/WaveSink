@@ -285,7 +285,8 @@ pub fn init_virtual_devices(
     let (model, eq, prefs) = {
         let mut mixer = state.lock_mixer()?;
         // Channels reach speakers only through mixes; make sure one plays.
-        if mixer.routing.ensure_an_output() {
+        let moved = crate::audio::hdmi::repin(&mut mixer.routing);
+        if mixer.routing.ensure_an_output() || moved {
             let _ = mixer.routing.save();
         }
         (mixer.routing.clone(), mixer.eq.clone(), mixer.prefs.clone())

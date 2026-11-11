@@ -137,6 +137,10 @@ pub struct OutputBinding {
     pub device: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// HDMI display behind `device` when bound; lets the binding follow the
+    /// display to another HDMI slot (see `audio::hdmi`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -345,6 +349,7 @@ impl RoutingModel {
         first.output_bindings.push(OutputBinding {
             device: SYSTEM_DEFAULT_OUTPUT.to_string(),
             enabled: true,
+            display: None,
         });
         true
     }
@@ -792,6 +797,7 @@ fn outputs_for_legacy(outputs: &ChannelOutputs) -> Vec<OutputBinding> {
         .map(|device| OutputBinding {
             device,
             enabled: true,
+            display: None,
         })
         .collect()
 }
@@ -833,6 +839,7 @@ mod tests {
         let bound = vec![OutputBinding {
             device: "alsa_output.hdmi".into(),
             enabled: true,
+            display: None,
         }];
         let mut model = RoutingModel {
             mixes: vec![mix("sink_bus_a", vec![]), mix("sink_bus_b", bound.clone())],
@@ -970,6 +977,7 @@ mod tests {
         saved.mixes[0].output_bindings = vec![OutputBinding {
             device: "alsa_output.usb".into(),
             enabled: true,
+            display: None,
         }];
         for channel in ["sink_game", "sink_chat", "sink_music", "sink_system"] {
             saved

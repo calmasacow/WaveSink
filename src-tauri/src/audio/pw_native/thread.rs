@@ -2150,6 +2150,7 @@ mod tests {
                 &[crate::routing_model::OutputBinding {
                     device: output.into(),
                     enabled: true,
+                    display: None,
                 }],
             )
             .unwrap();
